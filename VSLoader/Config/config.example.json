@@ -1,0 +1,12 @@
+{
+  "VSCodePath": "C:\\Users\\shee_\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+  "Shortcuts": [
+    {
+      "Name": "3365_TRSM005",
+      "TargetPath": "\\\\192.168.15.69\\instances\\3365_TRSM005",
+      "Description": "网络实例目录",
+      "CreatedAt": "2026-05-26T10:00:00",
+      "UpdatedAt": "2026-05-26T10:00:00"
+    }
+  ]
+}

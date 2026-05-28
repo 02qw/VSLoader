@@ -1,0 +1,18 @@
+MatchType,Pattern,DisplayName,NameTemplate
+Contains,TSSP,AMX银烧结（含模具）/ 银烧结（快克炉子）,{DisplayName}_{FolderName}
+Contains,TRSM,银烧结 NG 抓取装置 / 3D X-RAY NG下料机,{DisplayName}_{FolderName}
+Contains,TPSM,印刷载具切换机 / 烧结载具切换机,{DisplayName}_{FolderName}
+Contains,TFPS,一次焊键合载盘切换机,{DisplayName}_{FolderName}
+Contains,TTVF,氮气垂直炉（银浆烘烤）,{DisplayName}_{FolderName}
+Contains,TVF,垂直炉,{DisplayName}_{FolderName}
+Contains,TSDE,SPI,{DisplayName}_{FolderName}
+Contains,TPMA,印刷机,{DisplayName}_{FolderName}
+Contains,TSAM,外壳组装机（包含锁螺丝）,{DisplayName}_{FolderName}
+Contains,TATP,自动点锡机,{DisplayName}_{FolderName}
+Contains,TAO,3D AOI,{DisplayName}_{FolderName}
+Contains,TWAM,二次焊接组装机,{DisplayName}_{FolderName}
+Contains,TWDM,二次焊接拆卸机,{DisplayName}_{FolderName}
+Contains,TSSM,热贴机,{DisplayName}_{FolderName}
+Contains,TCSM,灌胶载盘切换机,{DisplayName}_{FolderName}
+Contains,TTCA,上盖组装,{DisplayName}_{FolderName}
+Contains,TCVF,真空甲酸炉,{DisplayName}_{FolderName}
