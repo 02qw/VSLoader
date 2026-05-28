@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -16,11 +17,12 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly DialogService _dialogService;
     private readonly BatchImportService _batchImportService;
     private readonly AdminUiService _adminUiService;
+    private readonly PasswordProtectionService _passwordProtectionService;
     private AppConfig _config = new();
     private bool _configLoadFailed;
 
     public MainViewModel()
-        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService())
+        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new PasswordProtectionService())
     {
     }
 
@@ -29,13 +31,15 @@ public sealed partial class MainViewModel : ObservableObject
         VSCodeLauncherService launcherService,
         DialogService dialogService,
         BatchImportService batchImportService,
-        AdminUiService adminUiService)
+        AdminUiService adminUiService,
+        PasswordProtectionService passwordProtectionService)
     {
         _configService = configService;
         _launcherService = launcherService;
         _dialogService = dialogService;
         _batchImportService = batchImportService;
         _adminUiService = adminUiService;
+        _passwordProtectionService = passwordProtectionService;
         ShortcutsView = CollectionViewSource.GetDefaultView(Shortcuts);
         ShortcutsView.Filter = FilterShortcut;
         if (ShortcutsView is ListCollectionView listCollectionView)
@@ -224,6 +228,24 @@ public sealed partial class MainViewModel : ObservableObject
         if (!result.Success)
         {
             _dialogService.ShowError(result.ErrorMessage ?? "打开 AdminUI 失败。");
+            return;
+        }
+
+        var password = _passwordProtectionService.Unprotect(_config.AdminUi.ProtectedPassword);
+        if (string.IsNullOrEmpty(password))
+        {
+            ShowStatusMessage("AdminUI 已打开，但未配置 AdminUI 密码。");
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(password);
+            ShowStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError($"AdminUI 已打开，但写入剪贴板失败：{ex.Message}");
         }
     }
 
@@ -286,7 +308,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenSettings()
     {
-        var viewModel = new SettingsViewModel(_config.VSCodePath, _config.AdminUi, _dialogService);
+        var viewModel = new SettingsViewModel(_config.VSCodePath, _config.AdminUi, _dialogService, _passwordProtectionService);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
@@ -343,20 +365,24 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_configLoadFailed)
         {
-            StatusMessage = $"配置文件读取失败，请检查 {_configService.ConfigPath}。";
-            HasStatusMessage = true;
+            ShowStatusMessage($"配置文件读取失败，请检查 {_configService.ConfigPath}。");
             return;
         }
 
         if (!VSCodeLauncherService.IsValidExecutablePath(_config.VSCodePath))
         {
-            StatusMessage = "尚未配置有效的 VSCode 路径，请进入设置。";
-            HasStatusMessage = true;
+            ShowStatusMessage("尚未配置有效的 VSCode 路径，请进入设置。");
             return;
         }
 
         StatusMessage = string.Empty;
         HasStatusMessage = false;
+    }
+
+    private void ShowStatusMessage(string message)
+    {
+        StatusMessage = message;
+        HasStatusMessage = true;
     }
 
     private bool FilterShortcut(object item)

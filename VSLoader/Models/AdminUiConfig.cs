@@ -18,6 +18,8 @@ public sealed class AdminUiConfig
 
     public bool IgnoreCertificateErrors { get; set; } = true;
 
+    public string ProtectedPassword { get; set; } = string.Empty;
+
     public AdminUiConfig Clone()
     {
         return new AdminUiConfig
@@ -29,7 +31,8 @@ public sealed class AdminUiConfig
             InstanceNameKey = InstanceNameKey,
             PortKey = PortKey,
             ServiceNameKey = ServiceNameKey,
-            IgnoreCertificateErrors = IgnoreCertificateErrors
+            IgnoreCertificateErrors = IgnoreCertificateErrors,
+            ProtectedPassword = ProtectedPassword
         };
     }
 }

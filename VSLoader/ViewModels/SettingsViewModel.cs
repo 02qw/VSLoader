@@ -8,12 +8,19 @@ namespace VSLoader.ViewModels;
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly DialogService _dialogService;
+    private readonly PasswordProtectionService _passwordProtectionService;
 
-    public SettingsViewModel(string vscodePath, AdminUiConfig adminUiConfig, DialogService dialogService)
+    public SettingsViewModel(
+        string vscodePath,
+        AdminUiConfig adminUiConfig,
+        DialogService dialogService,
+        PasswordProtectionService passwordProtectionService)
     {
         VSCodePath = vscodePath;
         AdminUi = adminUiConfig.Clone();
         _dialogService = dialogService;
+        _passwordProtectionService = passwordProtectionService;
+        AdminUiPassword = _passwordProtectionService.Unprotect(AdminUi.ProtectedPassword);
     }
 
     [ObservableProperty]
@@ -21,6 +28,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private AdminUiConfig adminUi = new();
+
+    [ObservableProperty]
+    private string adminUiPassword = string.Empty;
 
     public bool Saved { get; private set; }
 
@@ -51,6 +61,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        AdminUi.ProtectedPassword = _passwordProtectionService.Protect(AdminUiPassword);
         Saved = true;
         RequestClose?.Invoke(true);
     }
