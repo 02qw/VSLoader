@@ -12,6 +12,7 @@ namespace VSLoader.ViewModels;
 
 public sealed partial class MainViewModel : ObservableObject
 {
+    private static readonly TimeSpan TemporaryStatusDuration = TimeSpan.FromSeconds(3);
     private readonly ConfigService _configService;
     private readonly VSCodeLauncherService _launcherService;
     private readonly DialogService _dialogService;
@@ -20,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly PasswordProtectionService _passwordProtectionService;
     private AppConfig _config = new();
     private bool _configLoadFailed;
+    private int _statusMessageVersion;
 
     public MainViewModel()
         : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new PasswordProtectionService())
@@ -234,14 +236,14 @@ public sealed partial class MainViewModel : ObservableObject
         var password = _passwordProtectionService.Unprotect(_config.AdminUi.ProtectedPassword);
         if (string.IsNullOrEmpty(password))
         {
-            ShowStatusMessage("AdminUI 已打开，但未配置 AdminUI 密码。");
+            ShowTemporaryStatusMessage("AdminUI 已打开，但未配置 AdminUI 密码。");
             return;
         }
 
         try
         {
             System.Windows.Clipboard.SetText(password);
-            ShowStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
+            ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
         }
         catch (Exception ex)
         {
@@ -381,8 +383,24 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void ShowStatusMessage(string message)
     {
+        _statusMessageVersion++;
         StatusMessage = message;
         HasStatusMessage = true;
+    }
+
+    private async void ShowTemporaryStatusMessage(string message)
+    {
+        var version = ++_statusMessageVersion;
+        StatusMessage = message;
+        HasStatusMessage = true;
+
+        await Task.Delay(TemporaryStatusDuration);
+
+        if (_statusMessageVersion == version)
+        {
+            StatusMessage = string.Empty;
+            HasStatusMessage = false;
+        }
     }
 
     private bool FilterShortcut(object item)
