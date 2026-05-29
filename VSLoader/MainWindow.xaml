@@ -88,12 +88,14 @@
                     BorderThickness="1"
                     CornerRadius="6">
                 <DataGrid x:Name="ShortcutsGrid"
-                          AlternatingRowBackground="#FAFAFA"
+                          AlternatingRowBackground="#FCFCFD"
                           AutoGenerateColumns="False"
                           Background="White"
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
-                          ColumnHeaderHeight="36"
+                          ColumnHeaderHeight="38"
+                          EnableColumnVirtualization="True"
+                          EnableRowVirtualization="True"
                           FontFamily="Microsoft YaHei UI"
                           FontSize="14"
                           GridLinesVisibility="Horizontal"
@@ -103,10 +105,13 @@
                           ItemsSource="{Binding ShortcutsView}"
                           MouseDoubleClick="ShortcutsGrid_MouseDoubleClick"
                           PreviewMouseRightButtonDown="ShortcutsGrid_PreviewMouseRightButtonDown"
-                          RowHeight="34"
+                          RowHeight="44"
                           RowHeaderWidth="0"
+                          ScrollViewer.CanContentScroll="True"
                           SelectedItem="{Binding SelectedShortcut, Mode=TwoWay}"
-                          SelectionMode="Single">
+                          SelectionMode="Single"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
                     <DataGrid.ContextMenu>
                         <ContextMenu Padding="0"
                                      Background="White"
@@ -164,10 +169,11 @@
                     </DataGrid.ContextMenu>
                     <DataGrid.ColumnHeaderStyle>
                         <Style TargetType="DataGridColumnHeader">
-                            <Setter Property="Background" Value="#F3F4F6" />
-                            <Setter Property="Foreground" Value="#111827" />
+                            <Setter Property="Background" Value="#F9FAFB" />
+                            <Setter Property="Foreground" Value="#6B7280" />
+                            <Setter Property="FontSize" Value="13" />
                             <Setter Property="FontWeight" Value="SemiBold" />
-                            <Setter Property="Padding" Value="8,0" />
+                            <Setter Property="Padding" Value="12,0" />
                             <Setter Property="HorizontalContentAlignment" Value="Left" />
                             <Setter Property="BorderBrush" Value="#E5E7EB" />
                             <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -175,28 +181,105 @@
                     </DataGrid.ColumnHeaderStyle>
                     <DataGrid.CellStyle>
                         <Style TargetType="DataGridCell">
-                            <Setter Property="Padding" Value="8,0" />
+                            <Setter Property="Padding" Value="12,0" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
                             <Setter Property="BorderThickness" Value="0" />
                             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="DataGridCell">
+                                        <Border Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                SnapsToDevicePixels="True">
+                                            <ContentPresenter VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                         </Style>
                     </DataGrid.CellStyle>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
-                            <Setter Property="MinHeight" Value="34" />
+                            <Setter Property="Background" Value="White" />
+                            <Setter Property="BorderBrush" Value="#EEF0F3" />
+                            <Setter Property="BorderThickness" Value="0,0,0,1" />
+                            <Setter Property="MinHeight" Value="44" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
+                            <Setter Property="SnapsToDevicePixels" Value="True" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="DataGridRow">
+                                        <Border x:Name="RowBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                SnapsToDevicePixels="True">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="3" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border x:Name="SelectedIndicator"
+                                                        Background="Transparent" />
+                                                <DataGridCellsPresenter Grid.Column="1"
+                                                                        SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="AlternationIndex" Value="1">
+                                                <Setter TargetName="RowBorder" Property="Background" Value="#FCFCFD" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="RowBorder" Property="Background" Value="#F6FAFF" />
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="RowBorder" Property="Background" Value="#EEF6FF" />
+                                                <Setter TargetName="SelectedIndicator" Property="Background" Value="#2563EB" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                         </Style>
                     </DataGrid.RowStyle>
                     <DataGrid.Columns>
                         <DataGridTextColumn Width="360"
                                             Binding="{Binding Name}"
-                                            Header="名称" />
+                                            Header="名称">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#111827" />
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Width="*"
                                             Binding="{Binding Description}"
-                                            Header="备注" />
+                                            Header="备注">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#4B5563" />
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Width="190"
                                             Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}"
-                                            Header="更新时间" />
+                                            Header="更新时间">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#6B7280" />
+                                    <Setter Property="FontSize" Value="13" />
+                                    <Setter Property="TextAlignment" Value="Right" />
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
