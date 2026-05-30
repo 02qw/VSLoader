@@ -9,8 +9,8 @@
         Icon="pack://application:,,,/Assets/tomato.ico"
         Height="620"
         MinHeight="520"
-        Width="1280"
-        MinWidth="1120"
+        Width="1040"
+        MinWidth="860"
         Cursor="{Binding IsBusy, Converter={StaticResource BusyCursorConverter}}">
     <Window.DataContext>
         <vm:MainViewModel />
@@ -33,53 +33,77 @@
             </Border>
 
             <Grid DockPanel.Dock="Top" Margin="16,16,16,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                <TextBox Grid.Column="0"
-                         Height="36"
-                         Padding="10,7"
-                         VerticalContentAlignment="Center"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="按名称、路径、备注搜索" />
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="1"
+                    <TextBox Grid.Column="0"
+                             Height="36"
+                             Padding="10,7"
+                             VerticalContentAlignment="Center"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="按名称、路径、备注搜索" />
+
+                    <Button Grid.Column="1"
+                            Width="76"
+                            Height="36"
                             Margin="12,0,0,0"
-                            Orientation="Horizontal">
-                    <Button Width="76"
-                            Margin="0,0,8,0"
-                            Command="{Binding AddShortcutCommand}"
-                            Content="新增" />
-                    <Button Width="112"
-                            Margin="0,0,8,0"
-                            Command="{Binding OpenBatchImportCommand}"
-                            Content="批量新增识别" />
-                    <Button Width="112"
-                            Margin="0,0,8,0"
-                            Command="{Binding DownloadAdminUiLinksCommand}"
-                            Content="自动获取连接" />
-                    <Button Width="82"
-                            Margin="0,0,8,0"
-                            Command="{Binding OpenAdminUiCommand}"
-                            Content="AdminUI" />
-                    <Button Width="76"
-                            Margin="0,0,8,0"
-                            Command="{Binding EditShortcutCommand}"
-                            Content="编辑" />
-                    <Button Width="76"
-                            Margin="0,0,8,0"
-                            Command="{Binding DeleteShortcutCommand}"
-                            Content="删除" />
-                    <Button Width="76"
-                            Margin="0,0,8,0"
-                            Command="{Binding OpenShortcutCommand}"
-                            Content="打开" />
-                    <Button Width="76"
                             Command="{Binding OpenSettingsCommand}"
                             Content="设置" />
-                </StackPanel>
+                </Grid>
+
+                <UniformGrid Grid.Row="1"
+                             Margin="0,10,0,0"
+                             Columns="7">
+                    <Button MinWidth="76"
+                            Height="36"
+                            Margin="0,0,10,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding AddShortcutCommand}"
+                            Content="新增" />
+                    <Button MinWidth="112"
+                            Height="36"
+                            Margin="0,0,10,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding OpenBatchImportCommand}"
+                            Content="批量新增识别" />
+                    <Button MinWidth="112"
+                            Height="36"
+                            Margin="0,0,10,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding DownloadAdminUiLinksCommand}"
+                            Content="自动获取连接" />
+                    <Button MinWidth="82"
+                            Height="36"
+                            Margin="0,0,10,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding OpenAdminUiCommand}"
+                            Content="AdminUI" />
+                    <Button MinWidth="76"
+                            Height="36"
+                            Margin="0,0,10,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding OpenShortcutCommand}"
+                            Content="打开" />
+                    <Button MinWidth="76"
+                            Height="36"
+                            Margin="0,0,10,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding EditShortcutCommand}"
+                            Content="编辑" />
+                    <Button MinWidth="76"
+                            Height="36"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding DeleteShortcutCommand}"
+                            Content="删除" />
+                </UniformGrid>
             </Grid>
 
             <Border Margin="16,0,16,16"
@@ -244,7 +268,7 @@
                         </Style>
                     </DataGrid.RowStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Width="360"
+                        <DataGridTextColumn Width="2*"
                                             Binding="{Binding Name}"
                                             Header="名称">
                             <DataGridTextColumn.ElementStyle>
@@ -256,7 +280,7 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Width="*"
+                        <DataGridTextColumn Width="3*"
                                             Binding="{Binding Description}"
                                             Header="备注">
                             <DataGridTextColumn.ElementStyle>
@@ -267,7 +291,7 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Width="190"
+                        <DataGridTextColumn Width="180"
                                             Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}"
                                             Header="更新时间">
                             <DataGridTextColumn.ElementStyle>
