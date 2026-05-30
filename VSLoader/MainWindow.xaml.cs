@@ -16,10 +16,76 @@ public partial class MainWindow : Window
         ["UpdatedAt"] = "更新时间"
     };
 
+    private readonly GlobalHotkeyService _hotkeyService = new();
+
     public MainWindow()
     {
         InitializeComponent();
         SetInitialSortState();
+        Loaded += MainWindow_Loaded;
+        Closed += MainWindow_Closed;
+    }
+
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        _hotkeyService.Initialize(this, ToggleWindowFromHotkey);
+        viewModel.TryRegisterHotkey = config =>
+        {
+            var result = _hotkeyService.Register(config);
+            if (!result.Success)
+            {
+                _hotkeyService.Register(viewModel.CurrentHotkey);
+            }
+
+            return result;
+        };
+
+        var result = _hotkeyService.Register(viewModel.CurrentHotkey);
+        if (!result.Success)
+        {
+            return;
+        }
+    }
+
+    private void MainWindow_Closed(object? sender, EventArgs e)
+    {
+        _hotkeyService.Dispose();
+    }
+
+    private void ToggleWindowFromHotkey()
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            RestoreAndActivate();
+            return;
+        }
+
+        if (IsActive)
+        {
+            WindowState = WindowState.Minimized;
+            return;
+        }
+
+        RestoreAndActivate();
+    }
+
+    private void RestoreAndActivate()
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Show();
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     private void ShortcutsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)

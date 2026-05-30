@@ -53,6 +53,7 @@ public sealed class ConfigService
             config.VSCodePath ??= string.Empty;
             config.Shortcuts ??= new List<ShortcutItem>();
             config.AdminUi ??= new AdminUiConfig();
+            config.Hotkey ??= new HotkeyConfig();
 
             return new ConfigLoadResult(config, true, null);
         }

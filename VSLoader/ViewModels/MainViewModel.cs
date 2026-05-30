@@ -53,6 +53,10 @@ public sealed partial class MainViewModel : ObservableObject
 
     public ICollectionView ShortcutsView { get; }
 
+    public HotkeyConfig CurrentHotkey => _config.Hotkey;
+
+    public Func<HotkeyConfig, SaveResult>? TryRegisterHotkey { get; set; }
+
     public ShortcutSortField CurrentSortField { get; private set; } = ShortcutSortField.Name;
 
     public ListSortDirection? CurrentSortDirection { get; private set; }
@@ -349,13 +353,14 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenSettings()
     {
-        var viewModel = new SettingsViewModel(_config.VSCodePath, _config.AdminUi, _dialogService, _passwordProtectionService);
+        var viewModel = new SettingsViewModel(_config.VSCodePath, _config.AdminUi, _config.Hotkey, _dialogService, _passwordProtectionService, TryRegisterHotkey);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
         {
             _config.VSCodePath = viewModel.VSCodePath.Trim();
             _config.AdminUi = viewModel.AdminUi.Clone();
+            _config.Hotkey = viewModel.Hotkey.Clone();
             SaveCurrentConfig();
             _configLoadFailed = false;
             UpdateStatusMessage();

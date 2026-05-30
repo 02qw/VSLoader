@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Input;
+using VSLoader.Services;
 using VSLoader.ViewModels;
 
 namespace VSLoader.Views;
@@ -11,6 +13,8 @@ public partial class SettingsWindow : Window
         DataContext = viewModel;
         Owner = System.Windows.Application.Current.MainWindow;
         AdminUiPasswordBox.Password = viewModel.AdminUiPassword;
+        PreviewKeyDown += SettingsWindow_PreviewKeyDown;
+        PreviewMouseDown += SettingsWindow_PreviewMouseDown;
         viewModel.RequestClose += result =>
         {
             DialogResult = result;
@@ -24,5 +28,52 @@ public partial class SettingsWindow : Window
         {
             viewModel.AdminUiPassword = AdminUiPasswordBox.Password;
         }
+    }
+
+    private void SettingsWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel { IsRecordingHotkey: true } viewModel)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift
+            or Key.System or Key.None)
+        {
+            return;
+        }
+
+        var ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+        var alt = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+        var shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+        viewModel.SetRecordedHotkey(ctrl, alt, shift, GlobalHotkeyService.GetDisplayKey(key));
+    }
+
+    private void SettingsWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel { IsRecordingHotkey: true } viewModel)
+        {
+            return;
+        }
+
+        var key = e.ChangedButton switch
+        {
+            MouseButton.XButton1 => "Mouse4",
+            MouseButton.XButton2 => "Mouse5",
+            _ => string.Empty
+        };
+
+        if (string.IsNullOrEmpty(key))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+        var alt = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+        var shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+        viewModel.SetRecordedHotkey(ctrl, alt, shift, key, "Mouse");
     }
 }

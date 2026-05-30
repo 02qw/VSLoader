@@ -7,4 +7,6 @@ public sealed class AppConfig
     public List<ShortcutItem> Shortcuts { get; set; } = new();
 
     public AdminUiConfig AdminUi { get; set; } = new();
+
+    public HotkeyConfig Hotkey { get; set; } = new();
 }

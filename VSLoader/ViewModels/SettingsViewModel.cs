@@ -13,14 +13,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(
         string vscodePath,
         AdminUiConfig adminUiConfig,
+        HotkeyConfig hotkeyConfig,
         DialogService dialogService,
-        PasswordProtectionService passwordProtectionService)
+        PasswordProtectionService passwordProtectionService,
+        Func<HotkeyConfig, SaveResult>? tryRegisterHotkey)
     {
         VSCodePath = vscodePath;
         AdminUi = adminUiConfig.Clone();
+        Hotkey = hotkeyConfig.Clone();
         _dialogService = dialogService;
         _passwordProtectionService = passwordProtectionService;
+        TryRegisterHotkey = tryRegisterHotkey;
         AdminUiPassword = _passwordProtectionService.Unprotect(AdminUi.ProtectedPassword);
+        UpdateHotkeyDisplayText();
     }
 
     [ObservableProperty]
@@ -32,7 +37,18 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string adminUiPassword = string.Empty;
 
+    [ObservableProperty]
+    private HotkeyConfig hotkey = new();
+
+    [ObservableProperty]
+    private string hotkeyDisplayText = string.Empty;
+
+    [ObservableProperty]
+    private bool isRecordingHotkey;
+
     public bool Saved { get; private set; }
+
+    private Func<HotkeyConfig, SaveResult>? TryRegisterHotkey { get; }
 
     [RelayCommand]
     private void BrowseExe()
@@ -61,9 +77,51 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        if (!ValidateHotkeyConfig())
+        {
+            return;
+        }
+
+        if (TryRegisterHotkey is not null)
+        {
+            var registerResult = TryRegisterHotkey(Hotkey);
+            if (!registerResult.Success)
+            {
+                _dialogService.ShowError(registerResult.ErrorMessage ?? "快捷键注册失败。");
+                return;
+            }
+        }
+
         AdminUi.ProtectedPassword = _passwordProtectionService.Protect(AdminUiPassword);
         Saved = true;
         RequestClose?.Invoke(true);
+    }
+
+    [RelayCommand]
+    private void StartRecordHotkey()
+    {
+        IsRecordingHotkey = true;
+        HotkeyDisplayText = "请按下快捷键...";
+    }
+
+    [RelayCommand]
+    private void ClearHotkey()
+    {
+        Hotkey = new HotkeyConfig();
+        IsRecordingHotkey = false;
+        UpdateHotkeyDisplayText();
+    }
+
+    public void SetRecordedHotkey(bool ctrl, bool alt, bool shift, string key, string inputType = "Keyboard")
+    {
+        Hotkey.Ctrl = ctrl;
+        Hotkey.Alt = alt;
+        Hotkey.Shift = shift;
+        Hotkey.InputType = inputType;
+        Hotkey.Key = key;
+        Hotkey.Enabled = true;
+        IsRecordingHotkey = false;
+        UpdateHotkeyDisplayText();
     }
 
     [RelayCommand]
@@ -100,5 +158,24 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         return true;
+    }
+
+    private bool ValidateHotkeyConfig()
+    {
+        var result = GlobalHotkeyService.Validate(Hotkey);
+        if (!result.Success)
+        {
+            _dialogService.ShowError(result.ErrorMessage ?? "快捷键无效。");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void UpdateHotkeyDisplayText()
+    {
+        HotkeyDisplayText = Hotkey.Enabled && !string.IsNullOrWhiteSpace(Hotkey.Key)
+            ? GlobalHotkeyService.Format(Hotkey)
+            : string.Empty;
     }
 }
