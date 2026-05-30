@@ -19,13 +19,14 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly BatchImportService _batchImportService;
     private readonly AdminUiService _adminUiService;
     private readonly PasswordProtectionService _passwordProtectionService;
+    private readonly ClipboardService _clipboardService;
     private AppConfig _config = new();
     private bool _configLoadFailed;
     private bool _hasInvalidConfigFile;
     private int _statusMessageVersion;
 
     public MainViewModel()
-        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new PasswordProtectionService())
+        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new PasswordProtectionService(), new ClipboardService())
     {
     }
 
@@ -35,7 +36,8 @@ public sealed partial class MainViewModel : ObservableObject
         DialogService dialogService,
         BatchImportService batchImportService,
         AdminUiService adminUiService,
-        PasswordProtectionService passwordProtectionService)
+        PasswordProtectionService passwordProtectionService,
+        ClipboardService clipboardService)
     {
         _configService = configService;
         _launcherService = launcherService;
@@ -43,6 +45,7 @@ public sealed partial class MainViewModel : ObservableObject
         _batchImportService = batchImportService;
         _adminUiService = adminUiService;
         _passwordProtectionService = passwordProtectionService;
+        _clipboardService = clipboardService;
         ShortcutsView = CollectionViewSource.GetDefaultView(Shortcuts);
         ShortcutsView.Filter = FilterShortcut;
         SetCustomSort(ShortcutSortField.Name, ListSortDirection.Ascending);
@@ -262,7 +265,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
-    private void OpenAdminUi()
+    private async Task OpenAdminUiAsync()
     {
         if (SelectedShortcut is null)
         {
@@ -283,15 +286,14 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        try
+        var clipboardResult = await _clipboardService.SetTextWithRetryAsync(password);
+        if (clipboardResult.Success)
         {
-            System.Windows.Clipboard.SetText(password);
             ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
+            return;
         }
-        catch (Exception ex)
-        {
-            _dialogService.ShowError($"AdminUI 已打开，但写入剪贴板失败：{ex.Message}");
-        }
+
+        _dialogService.ShowError($"AdminUI 已打开，但写入剪贴板失败：{clipboardResult.ErrorMessage}");
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
