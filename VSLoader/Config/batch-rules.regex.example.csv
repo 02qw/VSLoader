@@ -17,3 +17,4 @@ Regex,^(?<Code>\d+)_(?<Type>TCSM)(?<No>\d+)$,灌胶载盘切换机,{DisplayName}
 Regex,^(?<Code>\d+)_(?<Type>TTCA)(?<No>\d+)$,上盖组装,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TCVF)(?<No>\d+)$,真空甲酸炉,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TDLM)(?<No>\d+)$,DBC上料机,{DisplayName}_{No}
+Regex,^(?<Code>\d+)_(?<Type>TCDE)(?<No>\d+)$,3D-X-RAY,{DisplayName}_{No}

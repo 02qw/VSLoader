@@ -1,4 +1,5 @@
 using System.Collections;
+using System.ComponentModel;
 using System.Text.RegularExpressions;
 using VSLoader.Models;
 
@@ -8,12 +9,29 @@ public sealed class ShortcutSortService : IComparer
 {
     private static readonly Regex NameWithNoRegex = new(@"^(?<Name>.+)_(?<No>\d+)$", RegexOptions.Compiled);
 
+    private readonly ShortcutSortField _field;
+    private readonly ListSortDirection _direction;
+
+    public ShortcutSortService(
+        ShortcutSortField field = ShortcutSortField.Name,
+        ListSortDirection direction = ListSortDirection.Ascending)
+    {
+        _field = field;
+        _direction = direction;
+    }
+
     public int Compare(object? x, object? y)
     {
-        return Compare(x as ShortcutItem, y as ShortcutItem);
+        var result = Compare(x as ShortcutItem, y as ShortcutItem, _field);
+        return _direction == ListSortDirection.Descending ? -result : result;
     }
 
     public static int Compare(ShortcutItem? x, ShortcutItem? y)
+    {
+        return Compare(x, y, ShortcutSortField.Name);
+    }
+
+    private static int Compare(ShortcutItem? x, ShortcutItem? y, ShortcutSortField field)
     {
         if (ReferenceEquals(x, y))
         {
@@ -30,6 +48,16 @@ public sealed class ShortcutSortService : IComparer
             return -1;
         }
 
+        return field switch
+        {
+            ShortcutSortField.Description => CompareText(x.Description, y.Description),
+            ShortcutSortField.UpdatedAt => DateTime.Compare(x.UpdatedAt, y.UpdatedAt),
+            _ => CompareName(x, y)
+        };
+    }
+
+    private static int CompareName(ShortcutItem x, ShortcutItem y)
+    {
         var xKey = ParseKey(x.Name);
         var yKey = ParseKey(y.Name);
 
@@ -56,6 +84,29 @@ public sealed class ShortcutSortService : IComparer
         }
 
         return string.Compare(x.Name, y.Name, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    private static int CompareText(string x, string y)
+    {
+        var xIsEmpty = string.IsNullOrWhiteSpace(x);
+        var yIsEmpty = string.IsNullOrWhiteSpace(y);
+
+        if (xIsEmpty && yIsEmpty)
+        {
+            return 0;
+        }
+
+        if (xIsEmpty)
+        {
+            return 1;
+        }
+
+        if (yIsEmpty)
+        {
+            return -1;
+        }
+
+        return string.Compare(x.Trim(), y.Trim(), StringComparison.CurrentCultureIgnoreCase);
     }
 
     private static ShortcutSortKey ParseKey(string name)

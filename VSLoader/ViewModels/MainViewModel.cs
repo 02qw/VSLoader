@@ -44,16 +44,17 @@ public sealed partial class MainViewModel : ObservableObject
         _passwordProtectionService = passwordProtectionService;
         ShortcutsView = CollectionViewSource.GetDefaultView(Shortcuts);
         ShortcutsView.Filter = FilterShortcut;
-        if (ShortcutsView is ListCollectionView listCollectionView)
-        {
-            listCollectionView.CustomSort = new ShortcutSortService();
-        }
+        SetCustomSort(ShortcutSortField.Name, ListSortDirection.Ascending);
         LoadConfig();
     }
 
     public ObservableCollection<ShortcutItem> Shortcuts { get; } = new();
 
     public ICollectionView ShortcutsView { get; }
+
+    public ShortcutSortField CurrentSortField { get; private set; } = ShortcutSortField.Name;
+
+    public ListSortDirection? CurrentSortDirection { get; private set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(EditShortcutCommand))]
@@ -107,6 +108,43 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnSearchTextChanged(string value)
     {
         ShortcutsView.Refresh();
+    }
+
+    public void ApplySort(ShortcutSortField field)
+    {
+        if (CurrentSortDirection is null || CurrentSortField != field)
+        {
+            CurrentSortField = field;
+            CurrentSortDirection = ListSortDirection.Ascending;
+            SetCustomSort(CurrentSortField, CurrentSortDirection.Value);
+            return;
+        }
+
+        if (CurrentSortDirection == ListSortDirection.Ascending)
+        {
+            CurrentSortDirection = ListSortDirection.Descending;
+            SetCustomSort(CurrentSortField, CurrentSortDirection.Value);
+            return;
+        }
+
+        CurrentSortField = ShortcutSortField.Name;
+        CurrentSortDirection = null;
+        SetCustomSort(ShortcutSortField.Name, ListSortDirection.Ascending);
+    }
+
+    public void ApplyDefaultSort()
+    {
+        CurrentSortField = ShortcutSortField.Name;
+        CurrentSortDirection = null;
+        SetCustomSort(ShortcutSortField.Name, ListSortDirection.Ascending);
+    }
+
+    public ListSortDirection EffectiveSortDirection
+    {
+        get
+        {
+            return CurrentSortDirection ?? ListSortDirection.Ascending;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
@@ -331,6 +369,16 @@ public sealed partial class MainViewModel : ObservableObject
     private bool CanRunGlobalCommand()
     {
         return !IsBusy;
+    }
+
+    private void SetCustomSort(ShortcutSortField field, ListSortDirection direction)
+    {
+        if (ShortcutsView is ListCollectionView listCollectionView)
+        {
+            listCollectionView.CustomSort = new ShortcutSortService(field, direction);
+        }
+
+        ShortcutsView.Refresh();
     }
 
     private void LoadConfig()
