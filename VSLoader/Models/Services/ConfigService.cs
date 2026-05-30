@@ -38,11 +38,16 @@ public sealed class ConfigService
         try
         {
             var json = File.ReadAllText(ConfigPath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new ConfigLoadResult(new AppConfig(), false, "配置文件为空。", true);
+            }
+
             var config = JsonSerializer.Deserialize<AppConfig>(json, _jsonOptions);
 
             if (config is null)
             {
-                return new ConfigLoadResult(new AppConfig(), false, "配置文件为空或格式无效。");
+                return new ConfigLoadResult(new AppConfig(), false, "配置文件为空或格式无效。", true);
             }
 
             config.VSCodePath ??= string.Empty;
@@ -53,7 +58,28 @@ public sealed class ConfigService
         }
         catch (Exception ex)
         {
-            return new ConfigLoadResult(new AppConfig(), false, ex.Message);
+            return new ConfigLoadResult(new AppConfig(), false, ex.Message, true);
+        }
+    }
+
+    public SaveResult BackupInvalidConfigFile()
+    {
+        try
+        {
+            if (!File.Exists(ConfigPath))
+            {
+                return SaveResult.Ok();
+            }
+
+            Directory.CreateDirectory(ConfigDirectory);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+            var backupPath = Path.Combine(ConfigDirectory, $"config.invalid.{timestamp}.json");
+            File.Copy(ConfigPath, backupPath, false);
+            return SaveResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            return SaveResult.Fail(ex.Message);
         }
     }
 

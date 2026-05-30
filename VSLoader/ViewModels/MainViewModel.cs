@@ -21,6 +21,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly PasswordProtectionService _passwordProtectionService;
     private AppConfig _config = new();
     private bool _configLoadFailed;
+    private bool _hasInvalidConfigFile;
     private int _statusMessageVersion;
 
     public MainViewModel()
@@ -386,16 +387,12 @@ public sealed partial class MainViewModel : ObservableObject
         var result = _configService.Load();
         _config = result.Config;
         _configLoadFailed = !result.Success;
+        _hasInvalidConfigFile = result.HasInvalidConfigFile;
 
         Shortcuts.Clear();
         foreach (var shortcut in _config.Shortcuts)
         {
             Shortcuts.Add(shortcut);
-        }
-
-        if (!result.Success)
-        {
-            _dialogService.ShowError($"配置文件读取失败，请检查 {_configService.ConfigPath}。\n\n{result.ErrorMessage}");
         }
 
         UpdateStatusMessage();
@@ -404,11 +401,27 @@ public sealed partial class MainViewModel : ObservableObject
     private void SaveCurrentConfig()
     {
         _config.Shortcuts = Shortcuts.ToList();
+        if (_hasInvalidConfigFile)
+        {
+            var backupResult = _configService.BackupInvalidConfigFile();
+            if (!backupResult.Success)
+            {
+                _dialogService.ShowError($"备份损坏配置文件失败：{backupResult.ErrorMessage}");
+                return;
+            }
+
+            _hasInvalidConfigFile = false;
+        }
+
         var result = _configService.Save(_config);
         if (!result.Success)
         {
             _dialogService.ShowError($"保存配置失败：{result.ErrorMessage}");
+            return;
         }
+
+        _configLoadFailed = false;
+        UpdateStatusMessage();
     }
 
     private void UpdateStatusMessage()
