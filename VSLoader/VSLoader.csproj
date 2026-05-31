@@ -18,6 +18,7 @@
   <ItemGroup>
     <Resource Include="Assets\tomato.ico" />
     <Resource Include="Assets\tomato.png" />
+    <Content Include="Assets\tomato.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
