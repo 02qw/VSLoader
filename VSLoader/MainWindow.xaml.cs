@@ -126,6 +126,14 @@ public partial class MainWindow : Window
             ContextMenuStrip = CreateTrayMenu()
         };
 
+        _notifyIcon.MouseClick += (_, e) =>
+        {
+            if (e.Button == WinForms.MouseButtons.Left)
+            {
+                RestoreAndActivate();
+            }
+        };
+
         _notifyIcon.DoubleClick += (_, _) => RestoreAndActivate();
     }
 
