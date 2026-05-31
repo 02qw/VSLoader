@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -112,15 +111,15 @@ public partial class MainWindow : Window
 
     private void InitializeTrayIcon()
     {
-        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "tomato.ico");
-        if (!File.Exists(iconPath))
+        var trayIcon = LoadTrayIcon();
+        if (trayIcon is null)
         {
             return;
         }
 
         _notifyIcon = new WinForms.NotifyIcon
         {
-            Icon = new System.Drawing.Icon(iconPath),
+            Icon = trayIcon,
             Text = "VSLoader",
             Visible = true,
             ContextMenuStrip = CreateTrayMenu()
@@ -135,6 +134,19 @@ public partial class MainWindow : Window
         };
 
         _notifyIcon.DoubleClick += (_, _) => RestoreAndActivate();
+    }
+
+    private static System.Drawing.Icon? LoadTrayIcon()
+    {
+        var resource = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/tomato.ico"));
+        if (resource is null)
+        {
+            return null;
+        }
+
+        using var stream = resource.Stream;
+        using var icon = new System.Drawing.Icon(stream);
+        return (System.Drawing.Icon)icon.Clone();
     }
 
     private WinForms.ContextMenuStrip CreateTrayMenu()
