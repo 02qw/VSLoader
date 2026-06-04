@@ -11,6 +11,7 @@ public sealed class BatchImportService
 {
     public const string StatusImportable = "可新增";
     public const string StatusUpdate = "可更新";
+    public const string StatusCleanup = "可清理";
     public const string StatusSkipped = "已跳过";
     public const string StatusDuplicate = "名称重复";
     public const string StatusRuleError = "规则错误";
@@ -107,11 +108,11 @@ public sealed class BatchImportService
         }
 
         var existingList = existingShortcuts.ToList();
-        var existingByPath = existingList
+        var existingGroupsByPath = existingList
             .Where(shortcut => !string.IsNullOrWhiteSpace(shortcut.TargetPath))
             .GroupBy(shortcut => NormalizePathKey(shortcut.TargetPath), StringComparer.OrdinalIgnoreCase)
             .Where(group => !string.IsNullOrWhiteSpace(group.Key))
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
         var previewNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var previewPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -154,6 +155,7 @@ public sealed class BatchImportService
             }
 
             var generatedName = GenerateName(matchResult.Rule, folderName, matchResult.RegexMatch, out var nameError).Trim();
+            var generatedDescription = $"批量新增：{folderName}";
             var sortNo = TryGetRegexNo(matchResult.RegexMatch);
             if (!string.IsNullOrWhiteSpace(nameError))
             {
@@ -192,8 +194,11 @@ public sealed class BatchImportService
                 continue;
             }
 
-            var existingShortcutForPath = existingByPath.TryGetValue(pathKey, out var matchedShortcut)
-                ? matchedShortcut
+            var existingGroupForPath = existingGroupsByPath.TryGetValue(pathKey, out var matchedGroup)
+                ? matchedGroup
+                : [];
+            var existingShortcutForPath = existingGroupForPath.Count > 0
+                ? existingGroupForPath[0]
                 : null;
             var hasNameConflict = HasNameConflict(existingList, generatedName, pathKey)
                 || !previewNames.Add(generatedName);
@@ -216,8 +221,61 @@ public sealed class BatchImportService
                 continue;
             }
 
+            if (existingGroupForPath.Count > 1)
+            {
+                var keepShortcut = SelectShortcutToKeep(existingGroupForPath, generatedName, directory, generatedDescription);
+                var duplicateShortcutsToRemove = existingGroupForPath
+                    .Where(shortcut => !ReferenceEquals(shortcut, keepShortcut))
+                    .ToList();
+
+                items.Add(new BatchImportPreviewItem
+                {
+                    FolderName = folderName,
+                    TargetPath = directory,
+                    GeneratedName = generatedName,
+                    MatchedPattern = matchResult.Rule.Pattern,
+                    ExistingTargetPath = keepShortcut.TargetPath,
+                    ExistingName = keepShortcut.Name,
+                    ExistingShortcutToUpdate = keepShortcut,
+                    Status = StatusCleanup,
+                    Message = $"发现 {existingGroupForPath.Count} 条相同目标路径快捷项，将保留最新规则结果并清理 {duplicateShortcutsToRemove.Count} 条重复项。",
+                    CanImport = true,
+                    IsSelected = true,
+                    IsUpdate = true,
+                    DuplicateCleanupCount = duplicateShortcutsToRemove.Count,
+                    DuplicateShortcutsToRemove = duplicateShortcutsToRemove,
+                    SortRuleIndex = matchResult.Rule.SortIndex,
+                    SortNo = sortNo,
+                    SortName = generatedName
+                });
+                continue;
+            }
+
             if (existingShortcutForPath is not null)
             {
+                if (!HasBatchImportChanges(existingShortcutForPath, generatedName, directory, generatedDescription))
+                {
+                    items.Add(new BatchImportPreviewItem
+                    {
+                        FolderName = folderName,
+                        TargetPath = directory,
+                        GeneratedName = generatedName,
+                        MatchedPattern = matchResult.Rule.Pattern,
+                        ExistingTargetPath = existingShortcutForPath.TargetPath,
+                        ExistingName = existingShortcutForPath.Name,
+                        ExistingShortcutToUpdate = existingShortcutForPath,
+                        Status = StatusSkipped,
+                        Message = "目标路径已存在，且当前规则结果无变化。",
+                        CanImport = false,
+                        IsSelected = false,
+                        IsUpdate = false,
+                        SortRuleIndex = matchResult.Rule.SortIndex,
+                        SortNo = sortNo,
+                        SortName = generatedName
+                    });
+                    continue;
+                }
+
                 items.Add(new BatchImportPreviewItem
                 {
                     FolderName = folderName,
@@ -226,6 +284,7 @@ public sealed class BatchImportService
                     MatchedPattern = matchResult.Rule.Pattern,
                     ExistingTargetPath = existingShortcutForPath.TargetPath,
                     ExistingName = existingShortcutForPath.Name,
+                    ExistingShortcutToUpdate = existingShortcutForPath,
                     Status = StatusUpdate,
                     Message = $"目标路径已存在，将更新：{existingShortcutForPath.Name} -> {generatedName}",
                     CanImport = true,
@@ -287,6 +346,8 @@ public sealed class BatchImportService
             {
                 IsUpdate = item.IsUpdate,
                 ExistingTargetPath = item.ExistingTargetPath.Trim(),
+                ExistingShortcutToUpdate = item.ExistingShortcutToUpdate,
+                DuplicateShortcutsToRemove = item.DuplicateShortcutsToRemove,
                 Shortcut = new ShortcutItem
                 {
                     Name = item.GeneratedName.Trim(),
@@ -378,10 +439,11 @@ public sealed class BatchImportService
         {
             StatusImportable => 0,
             StatusUpdate => 1,
-            StatusSkipped => 2,
-            StatusRuleError => 3,
-            StatusDuplicate => 4,
-            _ => 4
+            StatusCleanup => 2,
+            StatusSkipped => 3,
+            StatusRuleError => 4,
+            StatusDuplicate => 5,
+            _ => 5
         };
     }
 
@@ -401,6 +463,33 @@ public sealed class BatchImportService
         return existingShortcuts.Any(shortcut =>
             string.Equals(shortcut.Name.Trim(), generatedName, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(NormalizePathKey(shortcut.TargetPath), currentPathKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasBatchImportChanges(
+        ShortcutItem existingShortcut,
+        string generatedName,
+        string generatedTargetPath,
+        string generatedDescription)
+    {
+        return !string.Equals(existingShortcut.Name.Trim(), generatedName.Trim(), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(existingShortcut.Description.Trim(), generatedDescription.Trim(), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(NormalizePathKey(existingShortcut.TargetPath), NormalizePathKey(generatedTargetPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ShortcutItem SelectShortcutToKeep(
+        IReadOnlyList<ShortcutItem> duplicates,
+        string generatedName,
+        string generatedTargetPath,
+        string generatedDescription)
+    {
+        var matchingShortcuts = duplicates
+            .Where(shortcut => !HasBatchImportChanges(shortcut, generatedName, generatedTargetPath, generatedDescription))
+            .ToList();
+
+        var candidates = matchingShortcuts.Count > 0 ? matchingShortcuts : duplicates;
+        return candidates
+            .OrderByDescending(shortcut => shortcut.UpdatedAt)
+            .First();
     }
 
     private static int? TryGetRegexNo(Match? regexMatch)

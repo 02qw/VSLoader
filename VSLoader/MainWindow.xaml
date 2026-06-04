@@ -42,6 +42,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
                     <TextBox Grid.Column="0"
@@ -51,7 +52,19 @@
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                              ToolTip="按名称、路径、备注搜索" />
 
-                    <Button Grid.Column="1"
+                    <TextBlock Grid.Column="1"
+                               MinWidth="80"
+                               Margin="12,0,0,0"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               FontFamily="Microsoft YaHei UI"
+                               FontSize="13"
+                               Foreground="#64748B"
+                               Text="{Binding ShortcutCountText}"
+                               TextAlignment="Center"
+                               ToolTip="当前筛选显示数量 / 总快捷项数量" />
+
+                    <Button Grid.Column="2"
                             Width="76"
                             Height="36"
                             Margin="12,0,0,0"

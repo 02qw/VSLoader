@@ -16,6 +16,8 @@ public sealed partial class BatchImportPreviewItem : ObservableObject
 
     public string ExistingName { get; set; } = string.Empty;
 
+    public ShortcutItem? ExistingShortcutToUpdate { get; set; }
+
     public string Status { get; set; } = string.Empty;
 
     public string Message { get; set; } = string.Empty;
@@ -23,6 +25,10 @@ public sealed partial class BatchImportPreviewItem : ObservableObject
     public bool CanImport { get; set; }
 
     public bool IsUpdate { get; set; }
+
+    public int DuplicateCleanupCount { get; set; }
+
+    public IReadOnlyList<ShortcutItem> DuplicateShortcutsToRemove { get; set; } = Array.Empty<ShortcutItem>();
 
     public int SortRuleIndex { get; set; } = int.MaxValue;
 

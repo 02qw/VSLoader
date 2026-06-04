@@ -86,6 +86,9 @@ public sealed partial class MainViewModel : ObservableObject
     private string statusMessage = string.Empty;
 
     [ObservableProperty]
+    private string shortcutCountText = "0 / 0";
+
+    [ObservableProperty]
     private bool hasStatusMessage;
 
     [ObservableProperty]
@@ -125,7 +128,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value)
     {
-        ShortcutsView.Refresh();
+        RefreshShortcutsView();
     }
 
     public void ApplySort(ShortcutSortField field)
@@ -175,7 +178,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             Shortcuts.Add(viewModel.Result);
             SaveCurrentConfig();
-            ShortcutsView.Refresh();
+            RefreshShortcutsView();
         }
     }
 
@@ -198,6 +201,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var importedCount = 0;
             var updatedCount = 0;
+            var cleanupCount = 0;
             foreach (var applyItem in viewModel.ApplyItems)
             {
                 if (applyItem.IsUpdate)
@@ -206,6 +210,8 @@ public sealed partial class MainViewModel : ObservableObject
                     {
                         updatedCount++;
                     }
+
+                    cleanupCount += RemoveDuplicateShortcuts(applyItem);
                 }
                 else
                 {
@@ -215,11 +221,11 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             shouldSaveConfig = true;
-            ShortcutsView.Refresh();
+            RefreshShortcutsView();
 
-            if (importedCount > 0 || updatedCount > 0)
+            if (importedCount > 0 || updatedCount > 0 || cleanupCount > 0)
             {
-                _dialogService.ShowInfo(BuildBatchImportResultMessage(importedCount, updatedCount));
+                _dialogService.ShowInfo(BuildBatchImportResultMessage(importedCount, updatedCount, cleanupCount));
             }
         }
 
@@ -232,7 +238,9 @@ public sealed partial class MainViewModel : ObservableObject
     private bool TryUpdateExistingShortcut(BatchImportApplyItem applyItem)
     {
         var existingPathKey = BatchImportService.NormalizePathKey(applyItem.ExistingTargetPath);
-        var existingShortcut = Shortcuts.FirstOrDefault(shortcut =>
+        var existingShortcut = applyItem.ExistingShortcutToUpdate is not null && Shortcuts.Contains(applyItem.ExistingShortcutToUpdate)
+            ? applyItem.ExistingShortcutToUpdate
+            : Shortcuts.FirstOrDefault(shortcut =>
             string.Equals(BatchImportService.NormalizePathKey(shortcut.TargetPath), existingPathKey, StringComparison.OrdinalIgnoreCase));
 
         if (existingShortcut is null)
@@ -248,19 +256,50 @@ public sealed partial class MainViewModel : ObservableObject
         return true;
     }
 
-    private static string BuildBatchImportResultMessage(int importedCount, int updatedCount)
+    private int RemoveDuplicateShortcuts(BatchImportApplyItem applyItem)
     {
-        if (importedCount > 0 && updatedCount > 0)
+        var removedCount = 0;
+        foreach (var duplicateShortcut in applyItem.DuplicateShortcutsToRemove)
         {
-            return $"已新增 {importedCount} 个快捷项，已更新 {updatedCount} 个快捷项。";
+            if (Shortcuts.Remove(duplicateShortcut))
+            {
+                removedCount++;
+                continue;
+            }
+
+            var fallbackMatch = Shortcuts.FirstOrDefault(shortcut =>
+                string.Equals(BatchImportService.NormalizePathKey(shortcut.TargetPath), BatchImportService.NormalizePathKey(duplicateShortcut.TargetPath), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(shortcut.Name.Trim(), duplicateShortcut.Name.Trim(), StringComparison.OrdinalIgnoreCase)
+                && shortcut.UpdatedAt == duplicateShortcut.UpdatedAt);
+
+            if (fallbackMatch is not null && Shortcuts.Remove(fallbackMatch))
+            {
+                removedCount++;
+            }
         }
 
+        return removedCount;
+    }
+
+    private static string BuildBatchImportResultMessage(int importedCount, int updatedCount, int cleanupCount)
+    {
+        var messageParts = new List<string>();
         if (importedCount > 0)
         {
-            return $"已新增 {importedCount} 个快捷项。";
+            messageParts.Add($"已新增 {importedCount} 个快捷项");
         }
 
-        return $"已更新 {updatedCount} 个快捷项。";
+        if (updatedCount > 0)
+        {
+            messageParts.Add($"已更新 {updatedCount} 个快捷项");
+        }
+
+        if (cleanupCount > 0)
+        {
+            messageParts.Add($"已清理 {cleanupCount} 个重复快捷项");
+        }
+
+        return string.Join("，", messageParts) + "。";
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
@@ -466,7 +505,7 @@ public sealed partial class MainViewModel : ObservableObject
             SelectedShortcut.Description = viewModel.Result.Description;
             SelectedShortcut.UpdatedAt = DateTime.Now;
             SaveCurrentConfig();
-            ShortcutsView.Refresh();
+            RefreshShortcutsView();
         }
     }
 
@@ -486,7 +525,7 @@ public sealed partial class MainViewModel : ObservableObject
         Shortcuts.Remove(SelectedShortcut);
         SelectedShortcut = null;
         SaveCurrentConfig();
-        ShortcutsView.Refresh();
+        RefreshShortcutsView();
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
@@ -538,7 +577,7 @@ public sealed partial class MainViewModel : ObservableObject
             listCollectionView.CustomSort = new ShortcutSortService(field, direction);
         }
 
-        ShortcutsView.Refresh();
+        RefreshShortcutsView();
     }
 
     private void LoadConfig()
@@ -554,7 +593,21 @@ public sealed partial class MainViewModel : ObservableObject
             Shortcuts.Add(shortcut);
         }
 
+        RefreshShortcutsView();
         UpdateStatusMessage();
+    }
+
+    private void RefreshShortcutsView()
+    {
+        ShortcutsView.Refresh();
+        UpdateShortcutCountText();
+    }
+
+    private void UpdateShortcutCountText()
+    {
+        var visibleCount = ShortcutsView.OfType<ShortcutItem>().Count();
+        var totalCount = Shortcuts.Count;
+        ShortcutCountText = $"{visibleCount} / {totalCount}";
     }
 
     private void SaveCurrentConfig()

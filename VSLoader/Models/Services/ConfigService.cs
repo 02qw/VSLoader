@@ -6,15 +6,30 @@ namespace VSLoader.Services;
 
 public sealed class ConfigService
 {
+    private readonly string? configDirectory;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true
     };
 
+    public ConfigService()
+    {
+    }
+
+    public ConfigService(string configDirectory)
+    {
+        this.configDirectory = configDirectory;
+    }
+
     public string ConfigDirectory
     {
         get
         {
+            if (!string.IsNullOrWhiteSpace(configDirectory))
+            {
+                return configDirectory;
+            }
+
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             return Path.Combine(appData, "VSLoader");
         }
