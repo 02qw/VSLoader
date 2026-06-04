@@ -206,7 +206,8 @@ public sealed class BatchImportService
         }
 
         return items
-            .OrderBy(item => item.SortRuleIndex)
+            .OrderBy(item => GetPreviewStatusSortPriority(item.Status))
+            .ThenBy(item => item.SortRuleIndex)
             .ThenBy(item => item.SortNo ?? int.MaxValue)
             .ThenBy(item => item.SortName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
@@ -299,6 +300,18 @@ public sealed class BatchImportService
     {
         return string.Equals(matchType, "Contains", StringComparison.OrdinalIgnoreCase)
             || string.Equals(matchType, "Regex", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int GetPreviewStatusSortPriority(string status)
+    {
+        return status switch
+        {
+            StatusImportable => 0,
+            StatusSkipped => 1,
+            StatusRuleError => 2,
+            StatusDuplicate => 3,
+            _ => 4
+        };
     }
 
     private static int? TryGetRegexNo(Match? regexMatch)

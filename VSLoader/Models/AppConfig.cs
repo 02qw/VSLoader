@@ -9,4 +9,8 @@ public sealed class AppConfig
     public AdminUiConfig AdminUi { get; set; } = new();
 
     public HotkeyConfig Hotkey { get; set; } = new();
+
+    public BatchImportConfig BatchImport { get; set; } = new();
+
+    public WebUiConfig WebUi { get; set; } = new();
 }

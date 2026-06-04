@@ -180,6 +180,12 @@
                             <MenuItem Header="AdminUI"
                                       Style="{StaticResource CompactMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.OpenAdminUiCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                            <MenuItem Header="获取AdminUI连接"
+                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Command="{Binding PlacementTarget.DataContext.DownloadSelectedAdminUiLinkCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                            <MenuItem Header="WebUI"
+                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Command="{Binding PlacementTarget.DataContext.OpenWebUiCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="编辑"
                                       Style="{StaticResource CompactMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.EditShortcutCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />

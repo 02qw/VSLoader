@@ -59,29 +59,8 @@ public sealed class AdminUiService
 
             try
             {
-                var info = ResolveShortcutInfo(shortcut, config);
-                var tempPath = info.LocalJnlpPath + ".tmp";
-
-                try
-                {
-                    await using (var responseStream = await httpClient.GetStreamAsync(info.Url, cancellationToken))
-                    await using (var fileStream = File.Create(tempPath))
-                    {
-                        await responseStream.CopyToAsync(fileStream, cancellationToken);
-                    }
-
-                    File.Move(tempPath, info.LocalJnlpPath, true);
-                    successCount++;
-                }
-                catch
-                {
-                    if (File.Exists(tempPath))
-                    {
-                        File.Delete(tempPath);
-                    }
-
-                    throw;
-                }
+                var info = await DownloadOneCoreAsync(shortcut, config, httpClient, cancellationToken);
+                successCount++;
 
                 if (!string.IsNullOrWhiteSpace(info.ServiceName)
                     && !string.Equals(info.ServiceName, info.InstanceName, StringComparison.OrdinalIgnoreCase))
@@ -134,6 +113,24 @@ public sealed class AdminUiService
         }
     }
 
+    public async Task<LaunchResult> DownloadOneAsync(
+        ShortcutItem shortcut,
+        AdminUiConfig config,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            Directory.CreateDirectory(DownloadDirectory);
+            using var httpClient = CreateHttpClient(config.IgnoreCertificateErrors);
+            _ = await DownloadOneCoreAsync(shortcut, config, httpClient, cancellationToken);
+            return LaunchResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            return LaunchResult.Fail(ex.Message);
+        }
+    }
+
     public LaunchResult OpenAdminUi(ShortcutItem shortcut, AdminUiConfig config)
     {
         try
@@ -155,6 +152,37 @@ public sealed class AdminUiService
         catch (Exception ex)
         {
             return LaunchResult.Fail(ex.Message);
+        }
+    }
+
+    private async Task<AdminUiShortcutInfo> DownloadOneCoreAsync(
+        ShortcutItem shortcut,
+        AdminUiConfig config,
+        HttpClient httpClient,
+        CancellationToken cancellationToken)
+    {
+        var info = ResolveShortcutInfo(shortcut, config);
+        var tempPath = info.LocalJnlpPath + ".tmp";
+
+        try
+        {
+            await using (var responseStream = await httpClient.GetStreamAsync(info.Url, cancellationToken))
+            await using (var fileStream = File.Create(tempPath))
+            {
+                await responseStream.CopyToAsync(fileStream, cancellationToken);
+            }
+
+            File.Move(tempPath, info.LocalJnlpPath, true);
+            return info;
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+
+            throw;
         }
     }
 

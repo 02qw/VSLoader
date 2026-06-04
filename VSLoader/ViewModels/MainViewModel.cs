@@ -18,6 +18,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly DialogService _dialogService;
     private readonly BatchImportService _batchImportService;
     private readonly AdminUiService _adminUiService;
+    private readonly WebUiService _webUiService;
+    private readonly ShortcutSearchService _shortcutSearchService;
     private readonly PasswordProtectionService _passwordProtectionService;
     private readonly ClipboardService _clipboardService;
     private AppConfig _config = new();
@@ -26,7 +28,7 @@ public sealed partial class MainViewModel : ObservableObject
     private int _statusMessageVersion;
 
     public MainViewModel()
-        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new PasswordProtectionService(), new ClipboardService())
+        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new WebUiService(), new ShortcutSearchService(), new PasswordProtectionService(), new ClipboardService())
     {
     }
 
@@ -36,6 +38,8 @@ public sealed partial class MainViewModel : ObservableObject
         DialogService dialogService,
         BatchImportService batchImportService,
         AdminUiService adminUiService,
+        WebUiService webUiService,
+        ShortcutSearchService shortcutSearchService,
         PasswordProtectionService passwordProtectionService,
         ClipboardService clipboardService)
     {
@@ -44,6 +48,8 @@ public sealed partial class MainViewModel : ObservableObject
         _dialogService = dialogService;
         _batchImportService = batchImportService;
         _adminUiService = adminUiService;
+        _webUiService = webUiService;
+        _shortcutSearchService = shortcutSearchService;
         _passwordProtectionService = passwordProtectionService;
         _clipboardService = clipboardService;
         ShortcutsView = CollectionViewSource.GetDefaultView(Shortcuts);
@@ -69,6 +75,8 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(DeleteShortcutCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenShortcutCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenAdminUiCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadSelectedAdminUiLinkCommand))]
+    [NotifyCanExecuteChangedFor(nameof(OpenWebUiCommand))]
     private ShortcutItem? selectedShortcut;
 
     [ObservableProperty]
@@ -85,6 +93,8 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(OpenBatchImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(DownloadAdminUiLinksCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenAdminUiCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadSelectedAdminUiLinkCommand))]
+    [NotifyCanExecuteChangedFor(nameof(OpenWebUiCommand))]
     [NotifyCanExecuteChangedFor(nameof(EditShortcutCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteShortcutCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenShortcutCommand))]
@@ -172,10 +182,19 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenBatchImport()
     {
-        var viewModel = new BatchImportViewModel(Shortcuts, _dialogService, _batchImportService);
+        var viewModel = new BatchImportViewModel(Shortcuts, _dialogService, _batchImportService, _config.BatchImport.Clone());
         var window = new BatchImportWindow(viewModel);
+        var dialogResult = window.ShowDialog();
+        var shouldSaveConfig = false;
 
-        if (window.ShowDialog() == true)
+        if (viewModel.HasSuccessfulScan)
+        {
+            _config.BatchImport.LastParentFolderPath = viewModel.ParentFolderPath.Trim();
+            _config.BatchImport.LastCsvPath = viewModel.CsvPath.Trim();
+            shouldSaveConfig = true;
+        }
+
+        if (dialogResult == true)
         {
             var importedShortcuts = viewModel.ImportedShortcuts;
             foreach (var shortcut in importedShortcuts)
@@ -183,13 +202,18 @@ public sealed partial class MainViewModel : ObservableObject
                 Shortcuts.Add(shortcut);
             }
 
-            SaveCurrentConfig();
+            shouldSaveConfig = true;
             ShortcutsView.Refresh();
 
             if (importedShortcuts.Count > 0)
             {
                 _dialogService.ShowInfo($"已新增 {importedShortcuts.Count} 个快捷项。");
             }
+        }
+
+        if (shouldSaveConfig)
+        {
+            SaveCurrentConfig();
         }
     }
 
@@ -216,7 +240,10 @@ public sealed partial class MainViewModel : ObservableObject
             BusyProgressText = "正在测试 AdminUI 网络连接...";
             BusyCurrentItemText = string.Empty;
 
-            var testResult = await _adminUiService.TestConnectionAsync(_config.AdminUi);
+            var shortcutSnapshot = Shortcuts.ToList();
+            var adminUiConfig = _config.AdminUi.Clone();
+
+            var testResult = await _adminUiService.TestConnectionAsync(adminUiConfig);
             if (!testResult.Success)
             {
                 BusyProgressText = "网络连接失败。";
@@ -235,7 +262,10 @@ public sealed partial class MainViewModel : ObservableObject
                     : $"正在处理：{downloadProgress.CurrentShortcutName}";
             });
 
-            var result = await _adminUiService.DownloadAllAsync(Shortcuts, _config.AdminUi, progress);
+            var result = await Task.Run(async () =>
+            {
+                return await _adminUiService.DownloadAllAsync(shortcutSnapshot, adminUiConfig, progress);
+            });
             var message = $"自动获取连接完成。\n成功：{result.SuccessCount}\n失败：{result.FailedCount}";
 
             if (result.Messages.Count > 0)
@@ -252,6 +282,67 @@ public sealed partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             _dialogService.ShowError($"自动获取连接失败：{ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+            BusyMessage = string.Empty;
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 0;
+            BusyProgressText = string.Empty;
+            BusyCurrentItemText = string.Empty;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
+    private async Task DownloadSelectedAdminUiLinkAsync()
+    {
+        if (SelectedShortcut is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var shortcut = SelectedShortcut;
+            var adminUiConfig = _config.AdminUi.Clone();
+
+            IsBusy = true;
+            BusyMessage = $"正在获取 {shortcut.Name} 的 AdminUI 连接，请稍候...";
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 1;
+            BusyProgressText = "正在测试 AdminUI 网络连接...";
+            BusyCurrentItemText = string.Empty;
+
+            var testResult = await _adminUiService.TestConnectionAsync(adminUiConfig);
+            if (!testResult.Success)
+            {
+                BusyProgressText = "网络连接失败。";
+                _dialogService.ShowError(testResult.ErrorMessage ?? "网络连接失败，请检查 AdminUI BaseUrl、网络环境或 VPN。");
+                return;
+            }
+
+            BusyProgressText = "正在下载 AdminUI 连接...";
+            BusyCurrentItemText = $"正在处理：{shortcut.Name}";
+
+            var result = await Task.Run(async () =>
+            {
+                return await _adminUiService.DownloadOneAsync(shortcut, adminUiConfig);
+            });
+
+            if (!result.Success)
+            {
+                _dialogService.ShowError(result.ErrorMessage ?? "获取 AdminUI 连接失败。");
+                return;
+            }
+
+            BusyProgressValue = 1;
+            BusyProgressText = "获取完成。";
+            _dialogService.ShowInfo($"已获取 AdminUI 连接：{shortcut.Name}");
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError($"获取 AdminUI 连接失败：{ex.Message}");
         }
         finally
         {
@@ -294,6 +385,21 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         _dialogService.ShowError($"AdminUI 已打开，但写入剪贴板失败：{clipboardResult.ErrorMessage}");
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
+    private void OpenWebUi()
+    {
+        if (SelectedShortcut is null)
+        {
+            return;
+        }
+
+        var result = _webUiService.OpenWebUi(SelectedShortcut, _config.WebUi);
+        if (!result.Success)
+        {
+            _dialogService.ShowError(result.ErrorMessage ?? "打开 WebUI 失败。");
+        }
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
@@ -484,9 +590,9 @@ public sealed partial class MainViewModel : ObservableObject
             return true;
         }
 
-        return Contains(shortcut.Name, keyword)
+        return _shortcutSearchService.IsTextMatch(shortcut.Name, keyword)
             || Contains(shortcut.TargetPath, keyword)
-            || Contains(shortcut.Description, keyword);
+            || _shortcutSearchService.IsTextMatch(shortcut.Description, keyword);
     }
 
     private static bool Contains(string source, string keyword)

@@ -54,6 +54,8 @@ public sealed class ConfigService
             config.Shortcuts ??= new List<ShortcutItem>();
             config.AdminUi ??= new AdminUiConfig();
             config.Hotkey ??= new HotkeyConfig();
+            config.BatchImport ??= new BatchImportConfig();
+            config.WebUi ??= new WebUiConfig();
 
             return new ConfigLoadResult(config, true, null);
         }

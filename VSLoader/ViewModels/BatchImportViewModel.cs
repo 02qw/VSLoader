@@ -16,11 +16,18 @@ public sealed partial class BatchImportViewModel : ObservableObject
     public BatchImportViewModel(
         IEnumerable<ShortcutItem> existingShortcuts,
         DialogService dialogService,
-        BatchImportService batchImportService)
+        BatchImportService batchImportService,
+        BatchImportConfig? initialConfig = null)
     {
         _existingShortcuts = existingShortcuts.ToList();
         _dialogService = dialogService;
         _batchImportService = batchImportService;
+
+        if (initialConfig is not null)
+        {
+            ParentFolderPath = initialConfig.LastParentFolderPath ?? string.Empty;
+            CsvPath = initialConfig.LastCsvPath ?? string.Empty;
+        }
     }
 
     [ObservableProperty]
@@ -51,6 +58,8 @@ public sealed partial class BatchImportViewModel : ObservableObject
     public ObservableCollection<BatchImportPreviewItem> PreviewItems { get; } = new();
 
     public IReadOnlyList<ShortcutItem> ImportedShortcuts { get; private set; } = Array.Empty<ShortcutItem>();
+
+    public bool HasSuccessfulScan { get; private set; }
 
     [RelayCommand]
     private void BrowseParentFolder()
@@ -130,6 +139,7 @@ public sealed partial class BatchImportViewModel : ObservableObject
         }
 
         RefreshStatistics();
+        HasSuccessfulScan = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanConfirmImport))]
