@@ -115,14 +115,19 @@ public sealed class GlobalHotkeyService : IDisposable
         }
 
         var modifierCount = CountModifiers(config);
-        if (modifierCount < 2)
+        if (modifierCount < 1)
         {
-            return SaveResult.Fail("快捷键至少需要两个修饰键和一个主键。");
+            return SaveResult.Fail("快捷键至少需要一个修饰键和一个主键。");
         }
 
         if (config.Alt && key == Key.F4)
         {
             return SaveResult.Fail("快捷键可能与 Windows 系统快捷键 Alt + F4 冲突，请更换。");
+        }
+
+        if (config.Alt && key == Key.Space)
+        {
+            return SaveResult.Fail("快捷键可能与 Windows 系统快捷键 Alt + Space 冲突，请更换。");
         }
 
         if (config.Ctrl && config.Alt && key == Key.Delete)
