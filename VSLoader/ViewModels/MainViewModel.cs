@@ -196,18 +196,30 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (dialogResult == true)
         {
-            var importedShortcuts = viewModel.ImportedShortcuts;
-            foreach (var shortcut in importedShortcuts)
+            var importedCount = 0;
+            var updatedCount = 0;
+            foreach (var applyItem in viewModel.ApplyItems)
             {
-                Shortcuts.Add(shortcut);
+                if (applyItem.IsUpdate)
+                {
+                    if (TryUpdateExistingShortcut(applyItem))
+                    {
+                        updatedCount++;
+                    }
+                }
+                else
+                {
+                    Shortcuts.Add(applyItem.Shortcut);
+                    importedCount++;
+                }
             }
 
             shouldSaveConfig = true;
             ShortcutsView.Refresh();
 
-            if (importedShortcuts.Count > 0)
+            if (importedCount > 0 || updatedCount > 0)
             {
-                _dialogService.ShowInfo($"已新增 {importedShortcuts.Count} 个快捷项。");
+                _dialogService.ShowInfo(BuildBatchImportResultMessage(importedCount, updatedCount));
             }
         }
 
@@ -215,6 +227,40 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SaveCurrentConfig();
         }
+    }
+
+    private bool TryUpdateExistingShortcut(BatchImportApplyItem applyItem)
+    {
+        var existingPathKey = BatchImportService.NormalizePathKey(applyItem.ExistingTargetPath);
+        var existingShortcut = Shortcuts.FirstOrDefault(shortcut =>
+            string.Equals(BatchImportService.NormalizePathKey(shortcut.TargetPath), existingPathKey, StringComparison.OrdinalIgnoreCase));
+
+        if (existingShortcut is null)
+        {
+            Shortcuts.Add(applyItem.Shortcut);
+            return false;
+        }
+
+        existingShortcut.Name = applyItem.Shortcut.Name;
+        existingShortcut.TargetPath = applyItem.Shortcut.TargetPath;
+        existingShortcut.Description = applyItem.Shortcut.Description;
+        existingShortcut.UpdatedAt = applyItem.Shortcut.UpdatedAt;
+        return true;
+    }
+
+    private static string BuildBatchImportResultMessage(int importedCount, int updatedCount)
+    {
+        if (importedCount > 0 && updatedCount > 0)
+        {
+            return $"已新增 {importedCount} 个快捷项，已更新 {updatedCount} 个快捷项。";
+        }
+
+        if (importedCount > 0)
+        {
+            return $"已新增 {importedCount} 个快捷项。";
+        }
+
+        return $"已更新 {updatedCount} 个快捷项。";
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]

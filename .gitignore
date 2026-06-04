@@ -3,6 +3,7 @@
 [Oo]bj/
 publish/
 artifacts/
+installer/Output/
 
 # Visual Studio / Rider / VS Code local files
 .vs/

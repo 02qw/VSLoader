@@ -10,6 +10,7 @@ namespace VSLoader.Services;
 public sealed class BatchImportService
 {
     public const string StatusImportable = "可新增";
+    public const string StatusUpdate = "可更新";
     public const string StatusSkipped = "已跳过";
     public const string StatusDuplicate = "名称重复";
     public const string StatusRuleError = "规则错误";
@@ -105,14 +106,35 @@ public sealed class BatchImportService
             }
         }
 
-        var existingNames = new HashSet<string>(
-            existingShortcuts.Select(shortcut => shortcut.Name.Trim()),
-            StringComparer.OrdinalIgnoreCase);
+        var existingList = existingShortcuts.ToList();
+        var existingByPath = existingList
+            .Where(shortcut => !string.IsNullOrWhiteSpace(shortcut.TargetPath))
+            .GroupBy(shortcut => NormalizePathKey(shortcut.TargetPath), StringComparer.OrdinalIgnoreCase)
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
         var previewNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var previewPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var directory in Directory.EnumerateDirectories(parentFolderPath))
         {
             var folderName = Path.GetFileName(directory);
+            var pathKey = NormalizePathKey(directory);
+            if (!previewPathKeys.Add(pathKey))
+            {
+                items.Add(new BatchImportPreviewItem
+                {
+                    FolderName = folderName,
+                    TargetPath = directory,
+                    Status = StatusDuplicate,
+                    Message = "本次预览中已存在相同目标路径。",
+                    CanImport = false,
+                    IsSelected = false,
+                    SortRuleIndex = int.MaxValue,
+                    SortName = folderName
+                });
+                continue;
+            }
+
             var matchResult = FindMatchingRule(rules, folderName);
 
             if (matchResult.Rule is null)
@@ -170,7 +192,12 @@ public sealed class BatchImportService
                 continue;
             }
 
-            if (existingNames.Contains(generatedName) || !previewNames.Add(generatedName))
+            var existingShortcutForPath = existingByPath.TryGetValue(pathKey, out var matchedShortcut)
+                ? matchedShortcut
+                : null;
+            var hasNameConflict = HasNameConflict(existingList, generatedName, pathKey)
+                || !previewNames.Add(generatedName);
+            if (hasNameConflict)
             {
                 items.Add(new BatchImportPreviewItem
                 {
@@ -182,6 +209,28 @@ public sealed class BatchImportService
                     Message = "生成名称与已有快捷项或本次预览项目重复。",
                     CanImport = false,
                     IsSelected = false,
+                    SortRuleIndex = matchResult.Rule.SortIndex,
+                    SortNo = sortNo,
+                    SortName = generatedName
+                });
+                continue;
+            }
+
+            if (existingShortcutForPath is not null)
+            {
+                items.Add(new BatchImportPreviewItem
+                {
+                    FolderName = folderName,
+                    TargetPath = directory,
+                    GeneratedName = generatedName,
+                    MatchedPattern = matchResult.Rule.Pattern,
+                    ExistingTargetPath = existingShortcutForPath.TargetPath,
+                    ExistingName = existingShortcutForPath.Name,
+                    Status = StatusUpdate,
+                    Message = $"目标路径已存在，将更新：{existingShortcutForPath.Name} -> {generatedName}",
+                    CanImport = true,
+                    IsSelected = true,
+                    IsUpdate = true,
                     SortRuleIndex = matchResult.Rule.SortIndex,
                     SortNo = sortNo,
                     SortName = generatedName
@@ -225,6 +274,27 @@ public sealed class BatchImportService
                 Description = $"批量新增：{item.FolderName}",
                 CreatedAt = now,
                 UpdatedAt = now
+            })
+            .ToList();
+    }
+
+    public IReadOnlyList<BatchImportApplyItem> CreateApplyItems(IEnumerable<BatchImportPreviewItem> previewItems)
+    {
+        var now = DateTime.Now;
+        return previewItems
+            .Where(item => item.CanImport && item.IsSelected)
+            .Select(item => new BatchImportApplyItem
+            {
+                IsUpdate = item.IsUpdate,
+                ExistingTargetPath = item.ExistingTargetPath.Trim(),
+                Shortcut = new ShortcutItem
+                {
+                    Name = item.GeneratedName.Trim(),
+                    TargetPath = item.TargetPath.Trim(),
+                    Description = $"批量新增：{item.FolderName}",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                }
             })
             .ToList();
     }
@@ -307,11 +377,30 @@ public sealed class BatchImportService
         return status switch
         {
             StatusImportable => 0,
-            StatusSkipped => 1,
-            StatusRuleError => 2,
-            StatusDuplicate => 3,
+            StatusUpdate => 1,
+            StatusSkipped => 2,
+            StatusRuleError => 3,
+            StatusDuplicate => 4,
             _ => 4
         };
+    }
+
+    public static string NormalizePathKey(string path)
+    {
+        var normalized = path.Trim().Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        while (normalized.Length > 1 && normalized.EndsWith(Path.DirectorySeparatorChar))
+        {
+            normalized = normalized[..^1];
+        }
+
+        return normalized;
+    }
+
+    private static bool HasNameConflict(IEnumerable<ShortcutItem> existingShortcuts, string generatedName, string currentPathKey)
+    {
+        return existingShortcuts.Any(shortcut =>
+            string.Equals(shortcut.Name.Trim(), generatedName, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(NormalizePathKey(shortcut.TargetPath), currentPathKey, StringComparison.OrdinalIgnoreCase));
     }
 
     private static int? TryGetRegexNo(Match? regexMatch)

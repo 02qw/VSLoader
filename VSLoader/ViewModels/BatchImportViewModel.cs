@@ -59,6 +59,8 @@ public sealed partial class BatchImportViewModel : ObservableObject
 
     public IReadOnlyList<ShortcutItem> ImportedShortcuts { get; private set; } = Array.Empty<ShortcutItem>();
 
+    public IReadOnlyList<BatchImportApplyItem> ApplyItems { get; private set; } = Array.Empty<BatchImportApplyItem>();
+
     public bool HasSuccessfulScan { get; private set; }
 
     [RelayCommand]
@@ -145,7 +147,11 @@ public sealed partial class BatchImportViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanConfirmImport))]
     private void ConfirmImport()
     {
-        ImportedShortcuts = _batchImportService.CreateShortcuts(PreviewItems);
+        ApplyItems = _batchImportService.CreateApplyItems(PreviewItems);
+        ImportedShortcuts = ApplyItems
+            .Where(item => !item.IsUpdate)
+            .Select(item => item.Shortcut)
+            .ToList();
         RequestClose?.Invoke(true);
     }
 
