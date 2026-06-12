@@ -8,13 +8,14 @@ Regex,^(?<Code>\d+)_(?<Type>TVF)(?<No>\d+)$,垂直炉,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TSDE)(?<No>\d+)$,SPI,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TPMA)(?<No>\d+)$,印刷机,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TATP)(?<No>\d+)$,自动点锡机,{DisplayName}_{No}
-Regex,^(?<Code>\d+)_(?<Type>TAOI)(?<No>\d+)$,3D-AOI,{DisplayName}_{No}
+Regex,^(?<Code>\d+)_(?<Type>TAOI)(?<No>007)$,美陆3D-AOI,{DisplayName}_{No}
+Regex,^(?<Code>\d+)_(?<Type>TAOI)(?<No>\d+)$,矩子3D-AOI,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TWAM)(?<No>\d+)$,二次焊接组装机,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TWDM)(?<No>\d+)$,二次焊接拆卸机,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TSSM)(?<No>\d+)$,热贴机,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TCSM)(?<No>\d+)$,灌胶载盘切换机,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TTCA)(?<No>\d+)$,上盖组装,{DisplayName}_{No}
-Regex,^(?<Code>\d+)_(?<Type>TCVF)(?<No>\d+)$,真空甲酸炉,{DisplayName}_{No}
+Regex,^(?<Code>\d+)_(?<Type>TCVF)(?<No>\d+)$,SMTK真空甲酸炉,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TDLM)(?<No>\d+)$,DBC上料机,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TCDE)(?<No>\d+)$,3D-X-RAY,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TSLM)(?<No>\d+)$,外壳组装-打螺丝机,{DisplayName}_{No}
@@ -30,3 +31,4 @@ Regex,^(?<Code>\d+)_(?<Type>BLA)(?<No>\d+)$,全自动上下料BLA,{DisplayName}_
 Regex,^(?<Code>\d+)_(?<Type>TBLA)(?<No>\d+)$,全自动上下料TBLA,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TTB)(?<No>\d+)$,全自动上下料TTB,{DisplayName}_{No}
 Regex,^(?<Code>\d+)_(?<Type>TITM)(?<No>\d+)$,初测机,{DisplayName}_{No}
+Regex,^(?<Code>\d+)_(?<Type>TAPT)(?<No>\d+)$,终测机,{DisplayName}_{No}

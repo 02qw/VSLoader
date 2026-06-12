@@ -1,15 +1,24 @@
 using System.ComponentModel;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using VSLoader.Services;
 using VSLoader.ViewModels;
+using VSLoader.Views;
 using WinForms = System.Windows.Forms;
 
 namespace VSLoader;
 
 public partial class MainWindow : Window
 {
+    private const double DefaultLayoutLeftRatio = 0.01;
+    private const double DefaultLayoutTopRatio = 0.055;
+    private const double DefaultLayoutMainWidthRatio = 0.50;
+    private const double DefaultLayoutMainHeightRatio = 0.70;
+    private const double DefaultLayoutRightMarginRatio = 0.01;
+    private const double DefaultLayoutGap = 0;
+
     private static readonly Dictionary<string, string> SortHeaderTitles = new()
     {
         ["Name"] = "名称",
@@ -18,26 +27,63 @@ public partial class MainWindow : Window
     };
 
     private readonly GlobalHotkeyService _hotkeyService = new();
+    private readonly FactoryMapLayoutService _factoryMapLayoutService = new();
     private WinForms.NotifyIcon? _notifyIcon;
+    private FactoryMapWindow? _factoryMapWindow;
+    private bool _isFactoryMapOpen;
     private bool _isExitRequested;
+    private bool _hasAppliedDefaultLayout;
+    private bool _isViewModelEventsAttached;
 
     public MainWindow()
     {
         InitializeComponent();
+        Title = BuildWindowTitle();
         InitializeTrayIcon();
         SetInitialSortState();
         Loaded += MainWindow_Loaded;
+        LocationChanged += MainWindow_LocationOrSizeChanged;
+        SizeChanged += MainWindow_LocationOrSizeChanged;
+        StateChanged += MainWindow_StateChanged;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
     }
 
+    private static string BuildWindowTitle()
+    {
+        return FormatWindowTitle(Assembly.GetExecutingAssembly().GetName().Version);
+    }
+
+    internal static string FormatWindowTitle(Version? version)
+    {
+        if (version is null)
+        {
+            return "VSLoader";
+        }
+
+        if (version.Build < 0)
+        {
+            return $"VSLoader v{version.Major}.{version.Minor}";
+        }
+
+        return $"VSLoader v{version.Major}.{version.Minor}.{version.Build}";
+    }
+
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        ApplyDefaultWindowLayoutOnce();
+
         if (DataContext is not MainViewModel viewModel)
         {
             return;
         }
 
+        if (!_isViewModelEventsAttached)
+        {
+            viewModel.ShortcutsChanged += MainViewModel_ShortcutsChanged;
+            viewModel.PropertyChanged += MainViewModel_PropertyChanged;
+            _isViewModelEventsAttached = true;
+        }
         _hotkeyService.Initialize(this, ToggleWindowFromHotkey);
         viewModel.TryRegisterHotkey = config =>
         {
@@ -57,10 +103,65 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplyDefaultWindowLayoutOnce()
+    {
+        if (_hasAppliedDefaultLayout || WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        _hasAppliedDefaultLayout = true;
+        ApplyDefaultMainWindowLayout();
+    }
+
+    private void ApplyDefaultMainWindowLayout()
+    {
+        var workArea = GetWorkArea();
+        var maxWidth = Math.Max(MinWidth, workArea.Width * 0.70);
+        var maxHeight = Math.Max(MinHeight, workArea.Height * 0.90);
+        var targetWidth = Clamp(workArea.Width * DefaultLayoutMainWidthRatio, MinWidth, maxWidth);
+        var targetHeight = Clamp(workArea.Height * DefaultLayoutMainHeightRatio, MinHeight, maxHeight);
+        var targetLeft = workArea.Left + workArea.Width * DefaultLayoutLeftRatio;
+        var targetTop = workArea.Top + workArea.Height * DefaultLayoutTopRatio;
+
+        if (targetLeft + targetWidth > workArea.Right)
+        {
+            targetLeft = workArea.Right - targetWidth;
+        }
+
+        if (targetTop + targetHeight > workArea.Bottom)
+        {
+            targetTop = workArea.Bottom - targetHeight;
+        }
+
+        Width = targetWidth;
+        Height = targetHeight;
+        Left = Math.Max(workArea.Left, targetLeft);
+        Top = Math.Max(workArea.Top, targetTop);
+    }
+
+    private void MainViewModel_ShortcutsChanged(object? sender, EventArgs e)
+    {
+        if (_factoryMapWindow is { IsVisible: true })
+        {
+            RefreshFactoryMap();
+        }
+    }
+
+    private void MainViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.SelectedShortcut))
+        {
+            SyncFactoryMapSelection();
+        }
+    }
+
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        CloseFactoryMapForExit();
         _hotkeyService.Dispose();
         DisposeTrayIcon();
+        DetachViewModelEvents();
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -71,6 +172,7 @@ public partial class MainWindow : Window
         }
 
         e.Cancel = true;
+        HideFactoryMapWindow();
         Hide();
     }
 
@@ -106,7 +208,220 @@ public partial class MainWindow : Window
             Topmost = true;
             Topmost = false;
             Focus();
+            ShowFactoryMapIfNeeded();
         });
+    }
+
+    private void FactoryMapButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleFactoryMapWindow();
+    }
+
+    private void ToggleFactoryMapWindow()
+    {
+        if (_factoryMapWindow is { IsVisible: true })
+        {
+            _isFactoryMapOpen = false;
+            _factoryMapWindow.Close();
+            _factoryMapWindow = null;
+            return;
+        }
+
+        _isFactoryMapOpen = true;
+        ShowFactoryMapIfNeeded();
+    }
+
+    private void ShowFactoryMapIfNeeded()
+    {
+        if (!_isFactoryMapOpen || !IsVisible || WindowState == WindowState.Minimized)
+        {
+            return;
+        }
+
+        if (_factoryMapWindow is null)
+        {
+            _factoryMapWindow = new FactoryMapWindow(
+                SelectShortcutFromMap,
+                SaveFactoryMapLayout,
+                GetCurrentShortcutsForMap,
+                ResolveFactoryMapLayoutPath)
+            {
+                Owner = this
+            };
+            _factoryMapWindow.Closed += (_, _) =>
+            {
+                _factoryMapWindow = null;
+            };
+        }
+
+        PositionFactoryMapWindow();
+        _factoryMapWindow.Show();
+        RefreshFactoryMap();
+    }
+
+    private void RefreshFactoryMap()
+    {
+        if (_factoryMapWindow is null)
+        {
+            return;
+        }
+
+        if (DataContext is not MainViewModel viewModel)
+        {
+            _factoryMapWindow.ShowError("工厂地图无法读取当前快捷项。");
+            return;
+        }
+
+        var layoutPath = ResolveFactoryMapLayoutPath();
+        var loadResult = _factoryMapLayoutService.LoadOrCreate(layoutPath, viewModel.Shortcuts);
+        if (!loadResult.Success)
+        {
+            _factoryMapWindow.ShowError(loadResult.ErrorMessage ?? "工厂地图布局读取失败。");
+            return;
+        }
+
+        _factoryMapWindow.RenderMap(loadResult.Map);
+        SyncFactoryMapSelection();
+    }
+
+    private void SyncFactoryMapSelection()
+    {
+        if (_factoryMapWindow is null || DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        _factoryMapWindow.HighlightShortcut(viewModel.SelectedShortcut);
+    }
+
+    private void DetachViewModelEvents()
+    {
+        if (!_isViewModelEventsAttached || DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.ShortcutsChanged -= MainViewModel_ShortcutsChanged;
+        viewModel.PropertyChanged -= MainViewModel_PropertyChanged;
+        _isViewModelEventsAttached = false;
+    }
+
+    private bool SaveFactoryMapLayout(VSLoader.Models.FactoryMapDeviceViewData map)
+    {
+        var result = _factoryMapLayoutService.Save(ResolveFactoryMapLayoutPath(), map);
+        return result.Success;
+    }
+
+    private IReadOnlyList<VSLoader.Models.ShortcutItem> GetCurrentShortcutsForMap()
+    {
+        return DataContext is MainViewModel viewModel
+            ? viewModel.Shortcuts.ToList()
+            : [];
+    }
+
+    private static string ResolveFactoryMapLayoutPath()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        return System.IO.Path.Combine(appData, "VSLoader", "factory-map.layout.json");
+    }
+
+    private static Rect GetWorkArea()
+    {
+        return SystemParameters.WorkArea;
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        return Math.Max(min, Math.Min(max, value));
+    }
+
+    private void PositionFactoryMapWindow()
+    {
+        if (_factoryMapWindow is null || WindowState == WindowState.Minimized)
+        {
+            return;
+        }
+
+        var workArea = GetWorkArea();
+        var rightMargin = workArea.Width * DefaultLayoutRightMarginRatio;
+        var mainWidth = ActualWidth > 0 ? ActualWidth : Width;
+        var mainHeight = ActualHeight > 0 ? ActualHeight : Height;
+        var mapLeft = Left + mainWidth + DefaultLayoutGap;
+        var mapTop = Top;
+        var mapHeight = Clamp(mainHeight, _factoryMapWindow.MinHeight, workArea.Height * 0.90);
+        var availableRightWidth = workArea.Right - mapLeft - rightMargin;
+        var mapWidth = Math.Max(_factoryMapWindow.MinWidth, availableRightWidth);
+
+        if (mapLeft + mapWidth > workArea.Right)
+        {
+            mapWidth = Math.Max(_factoryMapWindow.MinWidth, workArea.Right - mapLeft - rightMargin);
+        }
+
+        if (mapWidth < _factoryMapWindow.MinWidth)
+        {
+            mapWidth = _factoryMapWindow.MinWidth;
+        }
+
+        if (mapLeft + mapWidth > workArea.Right)
+        {
+            mapLeft = Math.Max(workArea.Left, workArea.Right - mapWidth - rightMargin);
+        }
+
+        if (mapTop + mapHeight > workArea.Bottom)
+        {
+            mapTop = workArea.Bottom - mapHeight;
+        }
+
+        _factoryMapWindow.Left = Math.Max(workArea.Left, mapLeft);
+        _factoryMapWindow.Top = Math.Max(workArea.Top, mapTop);
+        _factoryMapWindow.Width = mapWidth;
+        _factoryMapWindow.Height = mapHeight;
+    }
+
+    private void HideFactoryMapWindow()
+    {
+        _factoryMapWindow?.Hide();
+    }
+
+    private void CloseFactoryMapForExit()
+    {
+        if (_factoryMapWindow is null)
+        {
+            return;
+        }
+
+        _isFactoryMapOpen = false;
+        _factoryMapWindow.Close();
+        _factoryMapWindow = null;
+    }
+
+    private void MainWindow_LocationOrSizeChanged(object? sender, EventArgs e)
+    {
+        PositionFactoryMapWindow();
+    }
+
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            HideFactoryMapWindow();
+            return;
+        }
+
+        ShowFactoryMapIfNeeded();
+    }
+
+    private void SelectShortcutFromMap(VSLoader.Models.ShortcutItem shortcut)
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.SelectedShortcut = shortcut;
+        ShortcutsGrid.SelectedItem = shortcut;
+        ShortcutsGrid.ScrollIntoView(shortcut);
+        ShortcutsGrid.Focus();
     }
 
     private void InitializeTrayIcon()

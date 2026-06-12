@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using CsvHelper;
 using CsvHelper.Configuration;
 using VSLoader.Models;
@@ -46,23 +47,40 @@ public sealed class BatchImportService
             }
 
             var headers = csv.HeaderRecord;
-            if (!RequiredHeaders.All(required => headers.Contains(required)))
+            var isSimpleModuleMapCsv = headers.Contains(nameof(BatchImportRule.ModuleName))
+                && headers.Contains(nameof(BatchImportRule.DisplayName))
+                && !headers.Contains(nameof(BatchImportRule.MatchType))
+                && !headers.Contains(nameof(BatchImportRule.Pattern));
+            var isComplexRuleCsv = RequiredHeaders.All(required => headers.Contains(required));
+            if (!isSimpleModuleMapCsv && !isComplexRuleCsv)
             {
-                errors.Add("CSV 表头不正确，必须是 MatchType,Pattern,DisplayName,NameTemplate。");
+                errors.Add("CSV 表头不正确，必须是 ModuleName,DisplayName 或 MatchType,Pattern,DisplayName,NameTemplate。");
                 return validRules;
             }
 
+            var hasModulePatternHeader = headers.Contains(nameof(BatchImportRule.ModulePattern));
             var rowNumber = 1;
             while (csv.Read())
             {
                 rowNumber++;
-                var rule = new BatchImportRule
-                {
-                    MatchType = csv.GetField(nameof(BatchImportRule.MatchType))?.Trim() ?? string.Empty,
-                    Pattern = csv.GetField(nameof(BatchImportRule.Pattern))?.Trim() ?? string.Empty,
-                    DisplayName = csv.GetField(nameof(BatchImportRule.DisplayName))?.Trim() ?? string.Empty,
-                    NameTemplate = csv.GetField(nameof(BatchImportRule.NameTemplate))?.Trim() ?? string.Empty
-                };
+                var rule = isSimpleModuleMapCsv
+                    ? new BatchImportRule
+                    {
+                        MatchType = "ModuleMap",
+                        ModuleName = csv.GetField(nameof(BatchImportRule.ModuleName))?.Trim() ?? string.Empty,
+                        DisplayName = csv.GetField(nameof(BatchImportRule.DisplayName))?.Trim() ?? string.Empty,
+                        NameTemplate = "{DisplayName}_{No}"
+                    }
+                    : new BatchImportRule
+                    {
+                        MatchType = csv.GetField(nameof(BatchImportRule.MatchType))?.Trim() ?? string.Empty,
+                        Pattern = csv.GetField(nameof(BatchImportRule.Pattern))?.Trim() ?? string.Empty,
+                        ModulePattern = hasModulePatternHeader
+                            ? csv.GetField(nameof(BatchImportRule.ModulePattern))?.Trim() ?? string.Empty
+                            : string.Empty,
+                        DisplayName = csv.GetField(nameof(BatchImportRule.DisplayName))?.Trim() ?? string.Empty,
+                        NameTemplate = csv.GetField(nameof(BatchImportRule.NameTemplate))?.Trim() ?? string.Empty
+                    };
 
                 var rowErrors = ValidateRule(rule, rowNumber);
                 if (rowErrors.Count > 0)
@@ -115,6 +133,7 @@ public sealed class BatchImportService
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
         var previewNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var previewPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var isSimpleModuleMapMode = IsSimpleModuleMapMode(rules);
 
         foreach (var directory in Directory.EnumerateDirectories(parentFolderPath))
         {
@@ -136,27 +155,64 @@ public sealed class BatchImportService
                 continue;
             }
 
-            var matchResult = FindMatchingRule(rules, folderName);
+            var generatedName = string.Empty;
+            string? nameError = null;
+            var generatedDescription = $"批量新增：{folderName}";
+            int? sortNo = null;
+            var matchedPattern = string.Empty;
+            var sortRuleIndex = int.MaxValue;
 
-            if (matchResult.Rule is null)
+            if (isSimpleModuleMapMode)
             {
-                items.Add(new BatchImportPreviewItem
+                var simpleResult = CreateSimpleModuleMapName(rules, folderName, directory);
+                if (!simpleResult.Success)
                 {
-                    FolderName = folderName,
-                    TargetPath = directory,
-                    Status = StatusSkipped,
-                    Message = "未匹配任何规则。",
-                    CanImport = false,
-                    IsSelected = false,
-                    SortRuleIndex = int.MaxValue - 1,
-                    SortName = folderName
-                });
-                continue;
+                    items.Add(new BatchImportPreviewItem
+                    {
+                        FolderName = folderName,
+                        TargetPath = directory,
+                        Status = simpleResult.Status,
+                        Message = simpleResult.ErrorMessage ?? "未匹配任何规则。",
+                        CanImport = false,
+                        IsSelected = false,
+                        SortRuleIndex = int.MaxValue - 1,
+                        SortNo = simpleResult.SortNo,
+                        SortName = folderName
+                    });
+                    continue;
+                }
+
+                generatedName = simpleResult.GeneratedName.Trim();
+                sortNo = simpleResult.SortNo;
+                matchedPattern = simpleResult.ModuleName;
+                sortRuleIndex = simpleResult.SortRuleIndex;
+            }
+            else
+            {
+                var matchResult = FindMatchingRule(rules, folderName, directory);
+
+                if (matchResult.Rule is null)
+                {
+                    items.Add(new BatchImportPreviewItem
+                    {
+                        FolderName = folderName,
+                        TargetPath = directory,
+                        Status = string.IsNullOrWhiteSpace(matchResult.ErrorMessage) ? StatusSkipped : matchResult.Status,
+                        Message = string.IsNullOrWhiteSpace(matchResult.ErrorMessage) ? "未匹配任何规则。" : matchResult.ErrorMessage,
+                        CanImport = false,
+                        IsSelected = false,
+                        SortRuleIndex = int.MaxValue - 1,
+                        SortName = folderName
+                    });
+                    continue;
+                }
+
+                generatedName = GenerateName(matchResult.Rule, folderName, matchResult.RegexMatch, out nameError).Trim();
+                sortNo = TryGetRegexNo(matchResult.RegexMatch);
+                matchedPattern = matchResult.Rule.Pattern;
+                sortRuleIndex = matchResult.Rule.SortIndex;
             }
 
-            var generatedName = GenerateName(matchResult.Rule, folderName, matchResult.RegexMatch, out var nameError).Trim();
-            var generatedDescription = $"批量新增：{folderName}";
-            var sortNo = TryGetRegexNo(matchResult.RegexMatch);
             if (!string.IsNullOrWhiteSpace(nameError))
             {
                 items.Add(new BatchImportPreviewItem
@@ -164,12 +220,12 @@ public sealed class BatchImportService
                     FolderName = folderName,
                     TargetPath = directory,
                     GeneratedName = generatedName,
-                    MatchedPattern = matchResult.Rule.Pattern,
+                    MatchedPattern = matchedPattern,
                     Status = StatusRuleError,
                     Message = nameError,
                     CanImport = false,
                     IsSelected = false,
-                    SortRuleIndex = int.MaxValue,
+                    SortRuleIndex = sortRuleIndex,
                     SortNo = sortNo,
                     SortName = string.IsNullOrWhiteSpace(generatedName) ? folderName : generatedName
                 });
@@ -182,12 +238,12 @@ public sealed class BatchImportService
                 {
                     FolderName = folderName,
                     TargetPath = directory,
-                    MatchedPattern = matchResult.Rule.Pattern,
+                    MatchedPattern = matchedPattern,
                     Status = StatusRuleError,
                     Message = "名称模板生成了空名称。",
                     CanImport = false,
                     IsSelected = false,
-                    SortRuleIndex = int.MaxValue,
+                    SortRuleIndex = sortRuleIndex,
                     SortNo = sortNo,
                     SortName = folderName
                 });
@@ -209,12 +265,12 @@ public sealed class BatchImportService
                     FolderName = folderName,
                     TargetPath = directory,
                     GeneratedName = generatedName,
-                    MatchedPattern = matchResult.Rule.Pattern,
+                    MatchedPattern = matchedPattern,
                     Status = StatusDuplicate,
                     Message = "生成名称与已有快捷项或本次预览项目重复。",
                     CanImport = false,
                     IsSelected = false,
-                    SortRuleIndex = matchResult.Rule.SortIndex,
+                    SortRuleIndex = sortRuleIndex,
                     SortNo = sortNo,
                     SortName = generatedName
                 });
@@ -233,7 +289,7 @@ public sealed class BatchImportService
                     FolderName = folderName,
                     TargetPath = directory,
                     GeneratedName = generatedName,
-                    MatchedPattern = matchResult.Rule.Pattern,
+                    MatchedPattern = matchedPattern,
                     ExistingTargetPath = keepShortcut.TargetPath,
                     ExistingName = keepShortcut.Name,
                     ExistingShortcutToUpdate = keepShortcut,
@@ -244,7 +300,7 @@ public sealed class BatchImportService
                     IsUpdate = true,
                     DuplicateCleanupCount = duplicateShortcutsToRemove.Count,
                     DuplicateShortcutsToRemove = duplicateShortcutsToRemove,
-                    SortRuleIndex = matchResult.Rule.SortIndex,
+                    SortRuleIndex = sortRuleIndex,
                     SortNo = sortNo,
                     SortName = generatedName
                 });
@@ -260,7 +316,7 @@ public sealed class BatchImportService
                         FolderName = folderName,
                         TargetPath = directory,
                         GeneratedName = generatedName,
-                        MatchedPattern = matchResult.Rule.Pattern,
+                        MatchedPattern = matchedPattern,
                         ExistingTargetPath = existingShortcutForPath.TargetPath,
                         ExistingName = existingShortcutForPath.Name,
                         ExistingShortcutToUpdate = existingShortcutForPath,
@@ -269,7 +325,7 @@ public sealed class BatchImportService
                         CanImport = false,
                         IsSelected = false,
                         IsUpdate = false,
-                        SortRuleIndex = matchResult.Rule.SortIndex,
+                        SortRuleIndex = sortRuleIndex,
                         SortNo = sortNo,
                         SortName = generatedName
                     });
@@ -281,7 +337,7 @@ public sealed class BatchImportService
                     FolderName = folderName,
                     TargetPath = directory,
                     GeneratedName = generatedName,
-                    MatchedPattern = matchResult.Rule.Pattern,
+                    MatchedPattern = matchedPattern,
                     ExistingTargetPath = existingShortcutForPath.TargetPath,
                     ExistingName = existingShortcutForPath.Name,
                     ExistingShortcutToUpdate = existingShortcutForPath,
@@ -290,7 +346,7 @@ public sealed class BatchImportService
                     CanImport = true,
                     IsSelected = true,
                     IsUpdate = true,
-                    SortRuleIndex = matchResult.Rule.SortIndex,
+                    SortRuleIndex = sortRuleIndex,
                     SortNo = sortNo,
                     SortName = generatedName
                 });
@@ -302,12 +358,12 @@ public sealed class BatchImportService
                 FolderName = folderName,
                 TargetPath = directory,
                 GeneratedName = generatedName,
-                MatchedPattern = matchResult.Rule.Pattern,
+                MatchedPattern = matchedPattern,
                 Status = StatusImportable,
                 Message = "可新增。",
                 CanImport = true,
                 IsSelected = true,
-                SortRuleIndex = matchResult.Rule.SortIndex,
+                SortRuleIndex = sortRuleIndex,
                 SortNo = sortNo,
                 SortName = generatedName
             });
@@ -364,6 +420,21 @@ public sealed class BatchImportService
     {
         var errors = new List<string>();
 
+        if (rule.IsSimpleModuleMapRule)
+        {
+            if (string.IsNullOrWhiteSpace(rule.ModuleName))
+            {
+                errors.Add($"第 {rowNumber} 行规则错误：ModuleName 不能为空。");
+            }
+
+            if (string.IsNullOrWhiteSpace(rule.DisplayName))
+            {
+                errors.Add($"第 {rowNumber} 行规则错误：DisplayName 不能为空。");
+            }
+
+            return errors;
+        }
+
         if (string.IsNullOrWhiteSpace(rule.MatchType))
         {
             errors.Add($"第 {rowNumber} 行规则错误：MatchType 不能为空。");
@@ -401,17 +472,49 @@ public sealed class BatchImportService
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(rule.ModulePattern))
+        {
+            try
+            {
+                _ = new Regex(rule.ModulePattern, RegexOptions.IgnoreCase);
+            }
+            catch (ArgumentException ex)
+            {
+                errors.Add($"第 {rowNumber} 行规则错误：ModulePattern Regex 语法无效：{ex.Message}");
+            }
+        }
+
         return errors;
     }
 
-    private static RuleMatchResult FindMatchingRule(IEnumerable<BatchImportRule> rules, string folderName)
+    private static RuleMatchResult FindMatchingRule(IEnumerable<BatchImportRule> rules, string folderName, string targetDirectory)
     {
+        string? moduleName = null;
+        string? moduleReadError = null;
+        var hasFolderCandidateWithModulePattern = false;
+
         foreach (var rule in rules)
         {
             if (string.Equals(rule.MatchType, "Contains", StringComparison.OrdinalIgnoreCase)
                 && folderName.Contains(rule.Pattern, StringComparison.OrdinalIgnoreCase))
             {
-                return new RuleMatchResult(rule, null);
+                if (string.IsNullOrWhiteSpace(rule.ModulePattern))
+                {
+                    return new RuleMatchResult(rule, null, null, StatusSkipped);
+                }
+
+                hasFolderCandidateWithModulePattern = true;
+                if (!TryEnsureModuleName(targetDirectory, ref moduleName, ref moduleReadError))
+                {
+                    continue;
+                }
+
+                if (Regex.IsMatch(moduleName!, rule.ModulePattern, RegexOptions.IgnoreCase))
+                {
+                    return new RuleMatchResult(rule, null, null, StatusSkipped);
+                }
+
+                continue;
             }
 
             if (string.Equals(rule.MatchType, "Regex", StringComparison.OrdinalIgnoreCase))
@@ -419,18 +522,93 @@ public sealed class BatchImportService
                 var match = Regex.Match(folderName, rule.Pattern, RegexOptions.IgnoreCase);
                 if (match.Success)
                 {
-                    return new RuleMatchResult(rule, match);
+                    if (string.IsNullOrWhiteSpace(rule.ModulePattern))
+                    {
+                        return new RuleMatchResult(rule, match, null, StatusSkipped);
+                    }
+
+                    hasFolderCandidateWithModulePattern = true;
+                    if (!TryEnsureModuleName(targetDirectory, ref moduleName, ref moduleReadError))
+                    {
+                        continue;
+                    }
+
+                    if (Regex.IsMatch(moduleName!, rule.ModulePattern, RegexOptions.IgnoreCase))
+                    {
+                        return new RuleMatchResult(rule, match, null, StatusSkipped);
+                    }
                 }
             }
         }
 
-        return new RuleMatchResult(null, null);
+        if (hasFolderCandidateWithModulePattern)
+        {
+            if (!string.IsNullOrWhiteSpace(moduleReadError))
+            {
+                var status = moduleReadError.StartsWith("ZAM-DEPLOY.xml 解析失败", StringComparison.Ordinal)
+                    ? StatusRuleError
+                    : StatusSkipped;
+                return new RuleMatchResult(null, null, moduleReadError, status);
+            }
+
+            if (!string.IsNullOrWhiteSpace(moduleName))
+            {
+                return new RuleMatchResult(null, null, $"模块名未匹配任何规则：{moduleName}", StatusSkipped);
+            }
+        }
+
+        return new RuleMatchResult(null, null, null, StatusSkipped);
     }
 
     private static bool IsSupportedMatchType(string matchType)
     {
         return string.Equals(matchType, "Contains", StringComparison.OrdinalIgnoreCase)
             || string.Equals(matchType, "Regex", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSimpleModuleMapMode(IReadOnlyList<BatchImportRule> rules)
+    {
+        return rules.Count > 0 && rules.All(rule => rule.IsSimpleModuleMapRule);
+    }
+
+    private static SimpleModuleMapResult CreateSimpleModuleMapName(
+        IReadOnlyList<BatchImportRule> rules,
+        string folderName,
+        string targetDirectory)
+    {
+        var noMatch = Regex.Match(folderName, @"^(?<Code>\d+)_(?<Type>[A-Za-z]+)(?<No>\d+)$", RegexOptions.IgnoreCase);
+        if (!noMatch.Success || !noMatch.Groups["No"].Success)
+        {
+            return SimpleModuleMapResult.Fail(StatusSkipped, "文件夹名无法提取编号 No。");
+        }
+
+        var noText = noMatch.Groups["No"].Value;
+        var sortNo = int.TryParse(noText, out var parsedNo) ? parsedNo : int.MaxValue;
+        var moduleName = TryReadZamModuleName(targetDirectory, out var moduleReadError);
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            var status = !string.IsNullOrWhiteSpace(moduleReadError)
+                && moduleReadError.StartsWith("ZAM-DEPLOY.xml 解析失败", StringComparison.Ordinal)
+                    ? StatusRuleError
+                    : StatusSkipped;
+            return SimpleModuleMapResult.Fail(status, moduleReadError ?? "未匹配任何规则。", sortNo);
+        }
+
+        var matchedRule = rules.FirstOrDefault(rule =>
+            string.Equals(rule.ModuleName.Trim(), moduleName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (matchedRule is null)
+        {
+            return SimpleModuleMapResult.Fail(StatusSkipped, $"模块名未在 CSV 中配置：{moduleName}", sortNo, moduleName);
+        }
+
+        return new SimpleModuleMapResult(
+            true,
+            $"{matchedRule.DisplayName.Trim()}_{noText}",
+            moduleName,
+            sortNo,
+            matchedRule.SortIndex,
+            null,
+            StatusImportable);
     }
 
     private static int GetPreviewStatusSortPriority(string status)
@@ -579,5 +757,74 @@ public sealed class BatchImportService
         return result;
     }
 
-    private sealed record RuleMatchResult(BatchImportRule? Rule, Match? RegexMatch);
+    private static bool TryEnsureModuleName(string targetDirectory, ref string? moduleName, ref string? errorMessage)
+    {
+        if (!string.IsNullOrWhiteSpace(moduleName))
+        {
+            return true;
+        }
+
+        moduleName = TryReadZamModuleName(targetDirectory, out errorMessage);
+        return !string.IsNullOrWhiteSpace(moduleName);
+    }
+
+    private static string? TryReadZamModuleName(string targetDirectory, out string? errorMessage)
+    {
+        errorMessage = null;
+        var xmlPath = Path.Combine(targetDirectory, "META-INF", "ZAM-DEPLOY.xml");
+        if (!File.Exists(xmlPath))
+        {
+            errorMessage = "未找到 META-INF\\ZAM-DEPLOY.xml，无法读取模块名。";
+            return null;
+        }
+
+        try
+        {
+            var document = XDocument.Load(xmlPath);
+            var description = document
+                .Root?
+                .DescendantsAndSelf()
+                .Attributes("description")
+                .Select(attribute => attribute.Value)
+                .FirstOrDefault(value => value.Contains("Application for ", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                errorMessage = "ZAM-DEPLOY.xml 中未找到 Application for 模块描述。";
+                return null;
+            }
+
+            var markerIndex = description.IndexOf("Application for ", StringComparison.OrdinalIgnoreCase);
+            var moduleName = description[(markerIndex + "Application for ".Length)..].Trim();
+            if (string.IsNullOrWhiteSpace(moduleName))
+            {
+                errorMessage = "ZAM-DEPLOY.xml 中未找到 Application for 模块描述。";
+                return null;
+            }
+
+            return moduleName;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"ZAM-DEPLOY.xml 解析失败：{ex.Message}";
+            return null;
+        }
+    }
+
+    private sealed record RuleMatchResult(BatchImportRule? Rule, Match? RegexMatch, string? ErrorMessage, string Status);
+
+    private sealed record SimpleModuleMapResult(
+        bool Success,
+        string GeneratedName,
+        string ModuleName,
+        int? SortNo,
+        int SortRuleIndex,
+        string? ErrorMessage,
+        string Status)
+    {
+        public static SimpleModuleMapResult Fail(string status, string errorMessage, int? sortNo = null, string moduleName = "")
+        {
+            return new SimpleModuleMapResult(false, string.Empty, moduleName, sortNo, int.MaxValue, errorMessage, status);
+        }
+    }
 }

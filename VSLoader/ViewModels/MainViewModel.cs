@@ -62,6 +62,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public ICollectionView ShortcutsView { get; }
 
+    public event EventHandler? ShortcutsChanged;
+
     public HotkeyConfig CurrentHotkey => _config.Hotkey;
 
     public Func<HotkeyConfig, SaveResult>? TryRegisterHotkey { get; set; }
@@ -601,6 +603,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         ShortcutsView.Refresh();
         UpdateShortcutCountText();
+        ShortcutsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void UpdateShortcutCountText()
