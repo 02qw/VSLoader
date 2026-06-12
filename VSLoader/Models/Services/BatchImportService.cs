@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -105,7 +105,8 @@ public sealed class BatchImportService
         string parentFolderPath,
         IReadOnlyList<BatchImportRule> rules,
         IEnumerable<ShortcutItem> existingShortcuts,
-        IEnumerable<string>? ruleErrors = null)
+        IEnumerable<string>? ruleErrors = null,
+        IProgress<BatchImportScanProgress>? progress = null)
     {
         var items = new List<BatchImportPreviewItem>();
 
@@ -134,10 +135,27 @@ public sealed class BatchImportService
         var previewNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var previewPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var isSimpleModuleMapMode = IsSimpleModuleMapMode(rules);
-
-        foreach (var directory in Directory.EnumerateDirectories(parentFolderPath))
+        progress?.Report(new BatchImportScanProgress
         {
+            CompletedCount = 0,
+            TotalCount = 0,
+            Stage = "正在枚举子文件夹..."
+        });
+        var directories = Directory.EnumerateDirectories(parentFolderPath).ToList();
+        var totalCount = directories.Count;
+
+        for (var index = 0; index < directories.Count; index++)
+        {
+            var directory = directories[index];
             var folderName = Path.GetFileName(directory);
+            progress?.Report(new BatchImportScanProgress
+            {
+                CompletedCount = index,
+                TotalCount = totalCount,
+                CurrentFolderName = folderName,
+                Stage = isSimpleModuleMapMode ? "正在读取模块信息并匹配规则" : "正在匹配规则"
+            });
+
             var pathKey = NormalizePathKey(directory);
             if (!previewPathKeys.Add(pathKey))
             {
@@ -152,6 +170,7 @@ public sealed class BatchImportService
                     SortRuleIndex = int.MaxValue,
                     SortName = folderName
                 });
+                ReportDirectoryCompleted(progress, index, totalCount, folderName);
                 continue;
             }
 
@@ -179,6 +198,7 @@ public sealed class BatchImportService
                         SortNo = simpleResult.SortNo,
                         SortName = folderName
                     });
+                    ReportDirectoryCompleted(progress, index, totalCount, folderName);
                     continue;
                 }
 
@@ -204,6 +224,7 @@ public sealed class BatchImportService
                         SortRuleIndex = int.MaxValue - 1,
                         SortName = folderName
                     });
+                    ReportDirectoryCompleted(progress, index, totalCount, folderName);
                     continue;
                 }
 
@@ -229,6 +250,7 @@ public sealed class BatchImportService
                     SortNo = sortNo,
                     SortName = string.IsNullOrWhiteSpace(generatedName) ? folderName : generatedName
                 });
+                ReportDirectoryCompleted(progress, index, totalCount, folderName);
                 continue;
             }
 
@@ -247,6 +269,7 @@ public sealed class BatchImportService
                     SortNo = sortNo,
                     SortName = folderName
                 });
+                ReportDirectoryCompleted(progress, index, totalCount, folderName);
                 continue;
             }
 
@@ -274,6 +297,7 @@ public sealed class BatchImportService
                     SortNo = sortNo,
                     SortName = generatedName
                 });
+                ReportDirectoryCompleted(progress, index, totalCount, folderName);
                 continue;
             }
 
@@ -304,6 +328,7 @@ public sealed class BatchImportService
                     SortNo = sortNo,
                     SortName = generatedName
                 });
+                ReportDirectoryCompleted(progress, index, totalCount, folderName);
                 continue;
             }
 
@@ -329,6 +354,7 @@ public sealed class BatchImportService
                         SortNo = sortNo,
                         SortName = generatedName
                     });
+                    ReportDirectoryCompleted(progress, index, totalCount, folderName);
                     continue;
                 }
 
@@ -350,6 +376,7 @@ public sealed class BatchImportService
                     SortNo = sortNo,
                     SortName = generatedName
                 });
+                ReportDirectoryCompleted(progress, index, totalCount, folderName);
                 continue;
             }
 
@@ -367,7 +394,21 @@ public sealed class BatchImportService
                 SortNo = sortNo,
                 SortName = generatedName
             });
+            progress?.Report(new BatchImportScanProgress
+            {
+                CompletedCount = index + 1,
+                TotalCount = totalCount,
+                CurrentFolderName = folderName,
+                Stage = "已处理"
+            });
         }
+
+        progress?.Report(new BatchImportScanProgress
+        {
+            CompletedCount = totalCount,
+            TotalCount = totalCount,
+            Stage = "扫描完成"
+        });
 
         return items
             .OrderBy(item => GetPreviewStatusSortPriority(item.Status))
@@ -375,6 +416,21 @@ public sealed class BatchImportService
             .ThenBy(item => item.SortNo ?? int.MaxValue)
             .ThenBy(item => item.SortName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+    }
+
+    private static void ReportDirectoryCompleted(
+        IProgress<BatchImportScanProgress>? progress,
+        int index,
+        int totalCount,
+        string folderName)
+    {
+        progress?.Report(new BatchImportScanProgress
+        {
+            CompletedCount = index + 1,
+            TotalCount = totalCount,
+            CurrentFolderName = folderName,
+            Stage = "已处理"
+        });
     }
 
     public IReadOnlyList<ShortcutItem> CreateShortcuts(IEnumerable<BatchImportPreviewItem> previewItems)

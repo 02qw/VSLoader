@@ -8,7 +8,9 @@
         Width="1120"
         MinWidth="920"
         WindowStartupLocation="CenterOwner">
-    <DockPanel Background="#F6F7F9" Margin="16">
+    <Grid Background="#F6F7F9">
+        <DockPanel Margin="16"
+                   IsEnabled="{Binding IsNotBusy}">
         <Grid DockPanel.Dock="Top">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -133,5 +135,44 @@
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
-    </DockPanel>
+        </DockPanel>
+
+        <Grid Background="#99000000"
+              Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Width="420"
+                    Padding="22"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="White"
+                    BorderBrush="#D1D5DB"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel>
+                    <TextBlock FontFamily="Microsoft YaHei UI"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="#111827"
+                               Text="{Binding BusyMessage}"
+                               TextAlignment="Center" />
+                    <ProgressBar Height="10"
+                                 Margin="0,18,0,0"
+                                 Maximum="{Binding BusyProgressMaximum}"
+                                 Value="{Binding BusyProgressValue}" />
+                    <TextBlock Margin="0,12,0,0"
+                               FontFamily="Microsoft YaHei UI"
+                               FontSize="12"
+                               Foreground="#475569"
+                               Text="{Binding BusyProgressText}"
+                               TextAlignment="Center" />
+                    <TextBlock Margin="0,6,0,0"
+                               FontFamily="Microsoft YaHei UI"
+                               FontSize="12"
+                               Foreground="#64748B"
+                               Text="{Binding BusyCurrentItemText}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
 </Window>

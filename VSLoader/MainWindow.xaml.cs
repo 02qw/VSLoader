@@ -3,6 +3,8 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
+using VSLoader.Models;
 using VSLoader.Services;
 using VSLoader.ViewModels;
 using VSLoader.Views;
@@ -13,9 +15,10 @@ namespace VSLoader;
 public partial class MainWindow : Window
 {
     private const double DefaultLayoutLeftRatio = 0.01;
-    private const double DefaultLayoutTopRatio = 0.055;
+    private const double DefaultLayoutTopRatio = 0.095;
     private const double DefaultLayoutMainWidthRatio = 0.50;
-    private const double DefaultLayoutMainHeightRatio = 0.70;
+    private const double DefaultLayoutMainHeightRatio = 0.62;
+    private const double DefaultLayoutMapHeightRatio = 0.88;
     private const double DefaultLayoutRightMarginRatio = 0.01;
     private const double DefaultLayoutGap = 0;
 
@@ -28,12 +31,17 @@ public partial class MainWindow : Window
 
     private readonly GlobalHotkeyService _hotkeyService = new();
     private readonly FactoryMapLayoutService _factoryMapLayoutService = new();
+    private readonly WindowLayoutService _windowLayoutService = new();
+    private readonly RuntimeLayoutState _runtimeLayoutState = new();
+    private readonly InitialLayoutRestoreGuard _initialLayoutRestoreGuard = new();
+    private CancellationTokenSource? _layoutSaveDebounceCts;
     private WinForms.NotifyIcon? _notifyIcon;
     private FactoryMapWindow? _factoryMapWindow;
     private bool _isFactoryMapOpen;
     private bool _isExitRequested;
     private bool _hasAppliedDefaultLayout;
     private bool _isViewModelEventsAttached;
+    private bool _isApplyingRuntimeLayout;
 
     public MainWindow()
     {
@@ -41,7 +49,9 @@ public partial class MainWindow : Window
         Title = BuildWindowTitle();
         InitializeTrayIcon();
         SetInitialSortState();
+        LoadWindowLayoutConfig();
         Loaded += MainWindow_Loaded;
+        ContentRendered += MainWindow_ContentRendered;
         LocationChanged += MainWindow_LocationOrSizeChanged;
         SizeChanged += MainWindow_LocationOrSizeChanged;
         StateChanged += MainWindow_StateChanged;
@@ -71,8 +81,6 @@ public partial class MainWindow : Window
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        ApplyDefaultWindowLayoutOnce();
-
         if (DataContext is not MainViewModel viewModel)
         {
             return;
@@ -103,18 +111,61 @@ public partial class MainWindow : Window
         }
     }
 
+    private void MainWindow_ContentRendered(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(ApplyDefaultWindowLayoutOnce), DispatcherPriority.ApplicationIdle);
+    }
+
+    private void LoadWindowLayoutConfig()
+    {
+        var config = _windowLayoutService.LoadOrCreateDefault(CreateDefaultWindowLayoutConfig, out _);
+        ApplyWindowLayoutConfigToRuntimeState(config);
+    }
+
+    private WindowLayoutConfig CreateDefaultWindowLayoutConfig()
+    {
+        return new WindowLayoutConfig
+        {
+            MainWindow = ToWindowBoundsConfig(CalculateDefaultMainWindowBounds())
+        };
+    }
+
     private void ApplyDefaultWindowLayoutOnce()
     {
-        if (_hasAppliedDefaultLayout || WindowState != WindowState.Normal)
+        if (_hasAppliedDefaultLayout)
         {
             return;
         }
 
+        if (WindowState != WindowState.Normal)
+        {
+            _initialLayoutRestoreGuard.Complete();
+            return;
+        }
+
         _hasAppliedDefaultLayout = true;
-        ApplyDefaultMainWindowLayout();
+        try
+        {
+            if (_runtimeLayoutState.HasMainWindowBounds)
+            {
+                RestoreMainWindowBoundsFromSession();
+                return;
+            }
+
+            ApplyDefaultMainWindowLayout();
+        }
+        finally
+        {
+            _initialLayoutRestoreGuard.Complete();
+        }
     }
 
     private void ApplyDefaultMainWindowLayout()
+    {
+        ApplyWindowBounds(this, CalculateDefaultMainWindowBounds());
+    }
+
+    private Rect CalculateDefaultMainWindowBounds()
     {
         var workArea = GetWorkArea();
         var maxWidth = Math.Max(MinWidth, workArea.Width * 0.70);
@@ -134,10 +185,11 @@ public partial class MainWindow : Window
             targetTop = workArea.Bottom - targetHeight;
         }
 
-        Width = targetWidth;
-        Height = targetHeight;
-        Left = Math.Max(workArea.Left, targetLeft);
-        Top = Math.Max(workArea.Top, targetTop);
+        return new Rect(
+            Math.Max(workArea.Left, targetLeft),
+            Math.Max(workArea.Top, targetTop),
+            targetWidth,
+            targetHeight);
     }
 
     private void MainViewModel_ShortcutsChanged(object? sender, EventArgs e)
@@ -158,7 +210,9 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        SaveMainWindowBoundsToSession();
         CloseFactoryMapForExit();
+        SaveWindowLayoutImmediately();
         _hotkeyService.Dispose();
         DisposeTrayIcon();
         DetachViewModelEvents();
@@ -172,6 +226,7 @@ public partial class MainWindow : Window
         }
 
         e.Cancel = true;
+        SaveMainWindowBoundsToSession();
         HideFactoryMapWindow();
         Hide();
     }
@@ -184,13 +239,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (IsActive)
-        {
-            WindowState = WindowState.Minimized;
-            return;
-        }
-
-        RestoreAndActivate();
+        SaveMainWindowBoundsToSession();
+        HideFactoryMapWindow();
+        WindowState = WindowState.Minimized;
     }
 
     private void RestoreAndActivate()
@@ -198,6 +249,7 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             Show();
+            RestoreMainWindowBoundsFromSession();
 
             if (WindowState == WindowState.Minimized)
             {
@@ -221,13 +273,16 @@ public partial class MainWindow : Window
     {
         if (_factoryMapWindow is { IsVisible: true })
         {
+            SaveFactoryMapStateToSession();
             _isFactoryMapOpen = false;
+            _runtimeLayoutState.WasFactoryMapOpen = false;
             _factoryMapWindow.Close();
             _factoryMapWindow = null;
             return;
         }
 
         _isFactoryMapOpen = true;
+        _runtimeLayoutState.WasFactoryMapOpen = true;
         ShowFactoryMapIfNeeded();
     }
 
@@ -242,19 +297,24 @@ public partial class MainWindow : Window
         {
             _factoryMapWindow = new FactoryMapWindow(
                 SelectShortcutFromMap,
+                ExecuteShortcutActionFromMap,
                 SaveFactoryMapLayout,
                 GetCurrentShortcutsForMap,
                 ResolveFactoryMapLayoutPath)
             {
                 Owner = this
             };
+            _factoryMapWindow.ViewStateChanged += FactoryMapWindow_ViewStateChanged;
+            _factoryMapWindow.LocationChanged += FactoryMapWindow_LocationOrSizeChanged;
+            _factoryMapWindow.SizeChanged += FactoryMapWindow_LocationOrSizeChanged;
             _factoryMapWindow.Closed += (_, _) =>
             {
+                SaveFactoryMapStateToSession();
                 _factoryMapWindow = null;
             };
         }
 
-        PositionFactoryMapWindow();
+        PositionFactoryMapWindow(useSessionBounds: true);
         _factoryMapWindow.Show();
         RefreshFactoryMap();
     }
@@ -280,7 +340,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        _factoryMapWindow.RenderMap(loadResult.Map);
+        var hasViewState = _runtimeLayoutState.FactoryMapView is not null;
+        _factoryMapWindow.RenderMap(loadResult.Map, resetView: !hasViewState);
+        if (hasViewState)
+        {
+            _factoryMapWindow.RestoreViewState(_runtimeLayoutState.FactoryMapView);
+        }
+
         SyncFactoryMapSelection();
     }
 
@@ -335,20 +401,33 @@ public partial class MainWindow : Window
         return Math.Max(min, Math.Min(max, value));
     }
 
-    private void PositionFactoryMapWindow()
+    private void PositionFactoryMapWindow(bool useSessionBounds)
     {
         if (_factoryMapWindow is null || WindowState == WindowState.Minimized)
         {
             return;
         }
 
+        if (useSessionBounds && _runtimeLayoutState.HasFactoryMapBounds)
+        {
+            var sessionBounds = new Rect(
+                _runtimeLayoutState.FactoryMapLeft,
+                _runtimeLayoutState.FactoryMapTop,
+                _runtimeLayoutState.FactoryMapWidth,
+                _runtimeLayoutState.FactoryMapHeight);
+            ApplyWindowBounds(_factoryMapWindow, ClampBoundsToWorkArea(
+                sessionBounds,
+                _factoryMapWindow.MinWidth,
+                _factoryMapWindow.MinHeight));
+            return;
+        }
+
         var workArea = GetWorkArea();
         var rightMargin = workArea.Width * DefaultLayoutRightMarginRatio;
         var mainWidth = ActualWidth > 0 ? ActualWidth : Width;
-        var mainHeight = ActualHeight > 0 ? ActualHeight : Height;
         var mapLeft = Left + mainWidth + DefaultLayoutGap;
         var mapTop = Top;
-        var mapHeight = Clamp(mainHeight, _factoryMapWindow.MinHeight, workArea.Height * 0.90);
+        var mapHeight = Clamp(workArea.Height * DefaultLayoutMapHeightRatio, _factoryMapWindow.MinHeight, workArea.Height * 0.90);
         var availableRightWidth = workArea.Right - mapLeft - rightMargin;
         var mapWidth = Math.Max(_factoryMapWindow.MinWidth, availableRightWidth);
 
@@ -372,14 +451,16 @@ public partial class MainWindow : Window
             mapTop = workArea.Bottom - mapHeight;
         }
 
-        _factoryMapWindow.Left = Math.Max(workArea.Left, mapLeft);
-        _factoryMapWindow.Top = Math.Max(workArea.Top, mapTop);
-        _factoryMapWindow.Width = mapWidth;
-        _factoryMapWindow.Height = mapHeight;
+        ApplyWindowBounds(_factoryMapWindow, new Rect(
+            Math.Max(workArea.Left, mapLeft),
+            Math.Max(workArea.Top, mapTop),
+            mapWidth,
+            mapHeight));
     }
 
     private void HideFactoryMapWindow()
     {
+        SaveFactoryMapStateToSession();
         _factoryMapWindow?.Hide();
     }
 
@@ -390,25 +471,264 @@ public partial class MainWindow : Window
             return;
         }
 
+        SaveFactoryMapStateToSession();
         _isFactoryMapOpen = false;
+        _runtimeLayoutState.WasFactoryMapOpen = false;
         _factoryMapWindow.Close();
         _factoryMapWindow = null;
     }
 
     private void MainWindow_LocationOrSizeChanged(object? sender, EventArgs e)
     {
-        PositionFactoryMapWindow();
+        SaveMainWindowBoundsToSession();
+        if (_factoryMapWindow is { IsVisible: true } && !_runtimeLayoutState.HasFactoryMapBounds)
+        {
+            PositionFactoryMapWindow(useSessionBounds: false);
+        }
     }
 
     private void MainWindow_StateChanged(object? sender, EventArgs e)
     {
         if (WindowState == WindowState.Minimized)
         {
+            SaveMainWindowBoundsToSession();
             HideFactoryMapWindow();
             return;
         }
 
         ShowFactoryMapIfNeeded();
+    }
+
+    private void FactoryMapWindow_ViewStateChanged(object? sender, EventArgs e)
+    {
+        SaveFactoryMapStateToSession(includeViewState: true);
+    }
+
+    private void FactoryMapWindow_LocationOrSizeChanged(object? sender, EventArgs e)
+    {
+        if (_isApplyingRuntimeLayout)
+        {
+            return;
+        }
+
+        SaveFactoryMapStateToSession(includeViewState: false);
+    }
+
+    private void SaveMainWindowBoundsToSession()
+    {
+        if (!_initialLayoutRestoreGuard.CanSaveWindowBounds || _isApplyingRuntimeLayout || WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        var width = ActualWidth > 0 ? ActualWidth : Width;
+        var height = ActualHeight > 0 ? ActualHeight : Height;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        _runtimeLayoutState.HasMainWindowBounds = true;
+        _runtimeLayoutState.MainLeft = Left;
+        _runtimeLayoutState.MainTop = Top;
+        _runtimeLayoutState.MainWidth = width;
+        _runtimeLayoutState.MainHeight = height;
+        ScheduleWindowLayoutSave();
+    }
+
+    private void RestoreMainWindowBoundsFromSession()
+    {
+        if (!_runtimeLayoutState.HasMainWindowBounds)
+        {
+            return;
+        }
+
+        var bounds = new Rect(
+            _runtimeLayoutState.MainLeft,
+            _runtimeLayoutState.MainTop,
+            _runtimeLayoutState.MainWidth,
+            _runtimeLayoutState.MainHeight);
+        ApplyWindowBounds(this, ClampBoundsToWorkArea(bounds, MinWidth, MinHeight));
+    }
+
+    private void SaveFactoryMapStateToSession(bool includeViewState = true)
+    {
+        if (_factoryMapWindow is null)
+        {
+            _runtimeLayoutState.WasFactoryMapOpen = _isFactoryMapOpen;
+            return;
+        }
+
+        _runtimeLayoutState.WasFactoryMapOpen = _isFactoryMapOpen;
+        var width = _factoryMapWindow.ActualWidth > 0 ? _factoryMapWindow.ActualWidth : _factoryMapWindow.Width;
+        var height = _factoryMapWindow.ActualHeight > 0 ? _factoryMapWindow.ActualHeight : _factoryMapWindow.Height;
+        if (width > 0 && height > 0)
+        {
+            _runtimeLayoutState.HasFactoryMapBounds = true;
+            _runtimeLayoutState.FactoryMapLeft = _factoryMapWindow.Left;
+            _runtimeLayoutState.FactoryMapTop = _factoryMapWindow.Top;
+            _runtimeLayoutState.FactoryMapWidth = width;
+            _runtimeLayoutState.FactoryMapHeight = height;
+        }
+
+        if (includeViewState && _factoryMapWindow.HasUserViewState)
+        {
+            _runtimeLayoutState.FactoryMapView = _factoryMapWindow.CaptureViewState();
+        }
+
+        ScheduleWindowLayoutSave();
+    }
+
+    private void ScheduleWindowLayoutSave()
+    {
+        var snapshot = BuildWindowLayoutConfigSnapshot();
+        _layoutSaveDebounceCts?.Cancel();
+        _layoutSaveDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _layoutSaveDebounceCts = cts;
+        var token = cts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(500, token);
+                await _windowLayoutService.SaveAsync(snapshot);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+                // Layout persistence should never interrupt window interaction.
+            }
+        }, token);
+    }
+
+    private void SaveWindowLayoutImmediately()
+    {
+        _layoutSaveDebounceCts?.Cancel();
+        _layoutSaveDebounceCts?.Dispose();
+        _layoutSaveDebounceCts = null;
+        _windowLayoutService.Save(BuildWindowLayoutConfigSnapshot());
+    }
+
+    private WindowLayoutConfig BuildWindowLayoutConfigSnapshot()
+    {
+        return new WindowLayoutConfig
+        {
+            MainWindow = _runtimeLayoutState.HasMainWindowBounds
+                ? new WindowBoundsConfig
+                {
+                    Left = _runtimeLayoutState.MainLeft,
+                    Top = _runtimeLayoutState.MainTop,
+                    Width = _runtimeLayoutState.MainWidth,
+                    Height = _runtimeLayoutState.MainHeight
+                }
+                : ToWindowBoundsConfig(CalculateDefaultMainWindowBounds()),
+            FactoryMapWindow = _runtimeLayoutState.HasFactoryMapBounds
+                ? new WindowBoundsConfig
+                {
+                    Left = _runtimeLayoutState.FactoryMapLeft,
+                    Top = _runtimeLayoutState.FactoryMapTop,
+                    Width = _runtimeLayoutState.FactoryMapWidth,
+                    Height = _runtimeLayoutState.FactoryMapHeight
+                }
+                : null,
+            WasFactoryMapOpen = _runtimeLayoutState.WasFactoryMapOpen,
+            FactoryMapView = _runtimeLayoutState.FactoryMapView is null
+                ? null
+                : new FactoryMapViewStateConfig
+                {
+                    FitScale = _runtimeLayoutState.FactoryMapView.FitScale,
+                    UserScale = _runtimeLayoutState.FactoryMapView.UserScale,
+                    OffsetX = _runtimeLayoutState.FactoryMapView.OffsetX,
+                    OffsetY = _runtimeLayoutState.FactoryMapView.OffsetY
+                }
+        };
+    }
+
+    private void ApplyWindowLayoutConfigToRuntimeState(WindowLayoutConfig config)
+    {
+        if (config.MainWindow is not null)
+        {
+            var bounds = ClampBoundsToWorkArea(
+                ToRect(config.MainWindow),
+                MinWidth,
+                MinHeight);
+            _runtimeLayoutState.HasMainWindowBounds = true;
+            _runtimeLayoutState.MainLeft = bounds.Left;
+            _runtimeLayoutState.MainTop = bounds.Top;
+            _runtimeLayoutState.MainWidth = bounds.Width;
+            _runtimeLayoutState.MainHeight = bounds.Height;
+        }
+
+        if (config.FactoryMapWindow is not null)
+        {
+            var bounds = ClampBoundsToWorkArea(
+                ToRect(config.FactoryMapWindow),
+                460,
+                360);
+            _runtimeLayoutState.HasFactoryMapBounds = true;
+            _runtimeLayoutState.FactoryMapLeft = bounds.Left;
+            _runtimeLayoutState.FactoryMapTop = bounds.Top;
+            _runtimeLayoutState.FactoryMapWidth = bounds.Width;
+            _runtimeLayoutState.FactoryMapHeight = bounds.Height;
+        }
+
+        _runtimeLayoutState.WasFactoryMapOpen = config.WasFactoryMapOpen;
+        if (config.FactoryMapView is not null)
+        {
+            _runtimeLayoutState.FactoryMapView = new FactoryMapViewState
+            {
+                FitScale = config.FactoryMapView.FitScale,
+                UserScale = config.FactoryMapView.UserScale,
+                OffsetX = config.FactoryMapView.OffsetX,
+                OffsetY = config.FactoryMapView.OffsetY
+            };
+        }
+    }
+
+    private static Rect ToRect(WindowBoundsConfig bounds)
+    {
+        return new Rect(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+    }
+
+    private static WindowBoundsConfig ToWindowBoundsConfig(Rect bounds)
+    {
+        return new WindowBoundsConfig
+        {
+            Left = bounds.Left,
+            Top = bounds.Top,
+            Width = bounds.Width,
+            Height = bounds.Height
+        };
+    }
+
+    private static Rect ClampBoundsToWorkArea(Rect bounds, double minWidth, double minHeight)
+    {
+        var workArea = GetWorkArea();
+        var width = Clamp(bounds.Width, minWidth, Math.Max(minWidth, workArea.Width));
+        var height = Clamp(bounds.Height, minHeight, Math.Max(minHeight, workArea.Height));
+        var left = Clamp(bounds.Left, workArea.Left, Math.Max(workArea.Left, workArea.Right - width));
+        var top = Clamp(bounds.Top, workArea.Top, Math.Max(workArea.Top, workArea.Bottom - height));
+        return new Rect(left, top, width, height);
+    }
+
+    private void ApplyWindowBounds(Window window, Rect bounds)
+    {
+        _isApplyingRuntimeLayout = true;
+        try
+        {
+            window.Left = bounds.Left;
+            window.Top = bounds.Top;
+            window.Width = bounds.Width;
+            window.Height = bounds.Height;
+        }
+        finally
+        {
+            _isApplyingRuntimeLayout = false;
+        }
     }
 
     private void SelectShortcutFromMap(VSLoader.Models.ShortcutItem shortcut)
@@ -418,6 +738,70 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!string.IsNullOrWhiteSpace(viewModel.SearchText))
+        {
+            viewModel.SearchText = string.Empty;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                SelectShortcutInGrid(viewModel, shortcut);
+            }), DispatcherPriority.Background);
+            return;
+        }
+
+        SelectShortcutInGrid(viewModel, shortcut);
+    }
+
+    private void ExecuteShortcutActionFromMap(VSLoader.Models.ShortcutItem shortcut, FactoryMapShortcutAction action)
+    {
+        SelectShortcutFromMap(shortcut);
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        switch (action)
+        {
+            case FactoryMapShortcutAction.OpenVsCode:
+                if (viewModel.OpenShortcutCommand.CanExecute(null))
+                {
+                    viewModel.OpenShortcutCommand.Execute(null);
+                }
+                break;
+            case FactoryMapShortcutAction.OpenAdminUi:
+                if (viewModel.OpenAdminUiCommand.CanExecute(null))
+                {
+                    viewModel.OpenAdminUiCommand.Execute(null);
+                }
+                break;
+            case FactoryMapShortcutAction.DownloadAdminUiLink:
+                if (viewModel.DownloadSelectedAdminUiLinkCommand.CanExecute(null))
+                {
+                    viewModel.DownloadSelectedAdminUiLinkCommand.Execute(null);
+                }
+                break;
+            case FactoryMapShortcutAction.OpenWebUi:
+                if (viewModel.OpenWebUiCommand.CanExecute(null))
+                {
+                    viewModel.OpenWebUiCommand.Execute(null);
+                }
+                break;
+            case FactoryMapShortcutAction.Edit:
+                if (viewModel.EditShortcutCommand.CanExecute(null))
+                {
+                    viewModel.EditShortcutCommand.Execute(null);
+                }
+                break;
+            case FactoryMapShortcutAction.Delete:
+                if (viewModel.DeleteShortcutCommand.CanExecute(null))
+                {
+                    viewModel.DeleteShortcutCommand.Execute(null);
+                }
+                break;
+        }
+    }
+
+    private void SelectShortcutInGrid(MainViewModel viewModel, VSLoader.Models.ShortcutItem shortcut)
+    {
         viewModel.SelectedShortcut = shortcut;
         ShortcutsGrid.SelectedItem = shortcut;
         ShortcutsGrid.ScrollIntoView(shortcut);

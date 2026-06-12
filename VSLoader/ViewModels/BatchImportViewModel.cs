@@ -55,6 +55,31 @@ public sealed partial class BatchImportViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
     private int selectedImportCount;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(BrowseParentFolderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BrowseCsvCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanPreviewCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConfirmImportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+    private bool isBusy;
+
+    [ObservableProperty]
+    private string busyMessage = string.Empty;
+
+    [ObservableProperty]
+    private int busyProgressValue;
+
+    [ObservableProperty]
+    private int busyProgressMaximum;
+
+    [ObservableProperty]
+    private string busyProgressText = string.Empty;
+
+    [ObservableProperty]
+    private string busyCurrentItemText = string.Empty;
+
+    public bool IsNotBusy => !IsBusy;
+
     public ObservableCollection<BatchImportPreviewItem> PreviewItems { get; } = new();
 
     public IReadOnlyList<ShortcutItem> ImportedShortcuts { get; private set; } = Array.Empty<ShortcutItem>();
@@ -63,7 +88,12 @@ public sealed partial class BatchImportViewModel : ObservableObject
 
     public bool HasSuccessfulScan { get; private set; }
 
-    [RelayCommand]
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsNotBusy));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunWindowCommand))]
     private void BrowseParentFolder()
     {
         var path = _dialogService.SelectFolder();
@@ -73,7 +103,7 @@ public sealed partial class BatchImportViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRunWindowCommand))]
     private void BrowseCsv()
     {
         var path = _dialogService.SelectCsvFile();
@@ -83,8 +113,8 @@ public sealed partial class BatchImportViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private void ScanPreview()
+    [RelayCommand(CanExecute = nameof(CanRunWindowCommand))]
+    private async Task ScanPreview()
     {
         var parentPath = ParentFolderPath.Trim();
         var csvPath = CsvPath.Trim();
@@ -113,35 +143,63 @@ public sealed partial class BatchImportViewModel : ObservableObject
             return;
         }
 
-        var rules = _batchImportService.LoadRules(csvPath, out var ruleErrors);
-        if (ruleErrors.Any(error => error.Contains("CSV 表头不正确", StringComparison.OrdinalIgnoreCase)
-            || error.Contains("CSV 读取失败", StringComparison.OrdinalIgnoreCase)))
+        IsBusy = true;
+        BusyMessage = "正在扫描预览，请稍候...";
+        BusyProgressValue = 0;
+        BusyProgressMaximum = 1;
+        BusyProgressText = "准备扫描...";
+        BusyCurrentItemText = string.Empty;
+
+        try
         {
-            _dialogService.ShowError(string.Join(Environment.NewLine, ruleErrors));
-            return;
+            var progress = new Progress<BatchImportScanProgress>(scanProgress =>
+            {
+                BusyProgressValue = scanProgress.CompletedCount;
+                BusyProgressMaximum = Math.Max(1, scanProgress.TotalCount);
+                BusyProgressText = scanProgress.TotalCount > 0
+                    ? $"当前进度：{scanProgress.CompletedCount} / {scanProgress.TotalCount}"
+                    : scanProgress.Stage;
+                BusyCurrentItemText = string.IsNullOrWhiteSpace(scanProgress.CurrentFolderName)
+                    ? scanProgress.Stage
+                    : $"{scanProgress.Stage}：{scanProgress.CurrentFolderName}";
+            });
+
+            var scanResult = await Task.Run(() =>
+            {
+                var rules = _batchImportService.LoadRules(csvPath, out var ruleErrors);
+                if (HasFatalRuleErrors(ruleErrors))
+                {
+                    return BatchImportScanResult.CreateFailure(ruleErrors);
+                }
+
+                var previewItems = _batchImportService.BuildPreview(parentPath, rules, _existingShortcuts, ruleErrors, progress);
+                return BatchImportScanResult.CreateSuccess(previewItems);
+            });
+
+            if (!scanResult.Success)
+            {
+                _dialogService.ShowError(string.Join(Environment.NewLine, scanResult.Errors));
+                return;
+            }
+
+            ReplacePreviewItems(scanResult.PreviewItems);
+
+            if (!scanResult.PreviewItems.Any(item => !string.IsNullOrWhiteSpace(item.TargetPath)))
+            {
+                _dialogService.ShowInfo("未扫描到子文件夹。");
+            }
+
+            RefreshStatistics();
+            HasSuccessfulScan = true;
         }
-
-        var previewItems = _batchImportService.BuildPreview(parentPath, rules, _existingShortcuts, ruleErrors);
-
-        foreach (var oldItem in PreviewItems)
+        catch (Exception ex)
         {
-            oldItem.PropertyChanged -= PreviewItem_PropertyChanged;
+            _dialogService.ShowError($"扫描预览失败：{ex.Message}");
         }
-
-        PreviewItems.Clear();
-        foreach (var item in previewItems)
+        finally
         {
-            item.PropertyChanged += PreviewItem_PropertyChanged;
-            PreviewItems.Add(item);
+            ClearBusyState();
         }
-
-        if (!Directory.EnumerateDirectories(parentPath).Any())
-        {
-            _dialogService.ShowInfo("未扫描到子文件夹。");
-        }
-
-        RefreshStatistics();
-        HasSuccessfulScan = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanConfirmImport))]
@@ -155,7 +213,7 @@ public sealed partial class BatchImportViewModel : ObservableObject
         RequestClose?.Invoke(true);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRunWindowCommand))]
     private void Cancel()
     {
         RequestClose?.Invoke(false);
@@ -165,7 +223,43 @@ public sealed partial class BatchImportViewModel : ObservableObject
 
     private bool CanConfirmImport()
     {
-        return SelectedImportCount > 0;
+        return !IsBusy && SelectedImportCount > 0;
+    }
+
+    private bool CanRunWindowCommand()
+    {
+        return !IsBusy;
+    }
+
+    private static bool HasFatalRuleErrors(IEnumerable<string> ruleErrors)
+    {
+        return ruleErrors.Any(error => error.Contains("CSV 表头不正确", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("CSV 读取失败", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void ReplacePreviewItems(IEnumerable<BatchImportPreviewItem> previewItems)
+    {
+        foreach (var oldItem in PreviewItems)
+        {
+            oldItem.PropertyChanged -= PreviewItem_PropertyChanged;
+        }
+
+        PreviewItems.Clear();
+        foreach (var item in previewItems)
+        {
+            item.PropertyChanged += PreviewItem_PropertyChanged;
+            PreviewItems.Add(item);
+        }
+    }
+
+    private void ClearBusyState()
+    {
+        IsBusy = false;
+        BusyMessage = string.Empty;
+        BusyProgressValue = 0;
+        BusyProgressMaximum = 0;
+        BusyProgressText = string.Empty;
+        BusyCurrentItemText = string.Empty;
     }
 
     private void PreviewItem_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -184,5 +278,21 @@ public sealed partial class BatchImportViewModel : ObservableObject
         DuplicateCount = PreviewItems.Count(item => item.Status == BatchImportService.StatusDuplicate);
         RuleErrorCount = PreviewItems.Count(item => item.Status == BatchImportService.StatusRuleError);
         SelectedImportCount = PreviewItems.Count(item => item.CanImport && item.IsSelected);
+    }
+
+    private sealed record BatchImportScanResult(
+        bool Success,
+        IReadOnlyList<BatchImportPreviewItem> PreviewItems,
+        IReadOnlyList<string> Errors)
+    {
+        public static BatchImportScanResult CreateSuccess(IReadOnlyList<BatchImportPreviewItem> previewItems)
+        {
+            return new BatchImportScanResult(true, previewItems, Array.Empty<string>());
+        }
+
+        public static BatchImportScanResult CreateFailure(IReadOnlyList<string> errors)
+        {
+            return new BatchImportScanResult(false, Array.Empty<BatchImportPreviewItem>(), errors);
+        }
     }
 }

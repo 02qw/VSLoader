@@ -25,7 +25,7 @@ public partial class FactoryMapWindow : Window
     private const double DeviceHeight = 58;
     private const double DragThreshold = 4;
     private const double SnapGridSize = 10;
-    private const double ViewPadding = 36;
+    private const double ViewPadding = 28;
     private const double ZoomFactor = 1.1;
     private const double MinUserScale = 0.5;
     private const double MaxUserScale = 4.0;
@@ -35,6 +35,7 @@ public partial class FactoryMapWindow : Window
         "VSLoader",
         "factory-map.debug.log");
     private readonly Action<ShortcutItem> selectShortcut;
+    private readonly Action<ShortcutItem, FactoryMapShortcutAction> executeShortcutAction;
     private readonly Func<FactoryMapDeviceViewData, bool> saveLayout;
     private readonly Func<IReadOnlyList<ShortcutItem>> getCurrentShortcuts;
     private readonly Func<string> getLayoutPath;
@@ -52,6 +53,7 @@ public partial class FactoryMapWindow : Window
     private bool isMultiSelectMode;
     private bool isSelectingNodes;
     private bool hasDeviceDragStarted;
+    private bool hasUserViewState;
     private bool pendingFitToView;
     private int fitRetryCount;
     private Border? activeDeviceElement;
@@ -72,11 +74,13 @@ public partial class FactoryMapWindow : Window
 
     public FactoryMapWindow(
         Action<ShortcutItem> selectShortcut,
+        Action<ShortcutItem, FactoryMapShortcutAction> executeShortcutAction,
         Func<FactoryMapDeviceViewData, bool> saveLayout,
         Func<IReadOnlyList<ShortcutItem>> getCurrentShortcuts,
         Func<string> getLayoutPath)
     {
         this.selectShortcut = selectShortcut;
+        this.executeShortcutAction = executeShortcutAction;
         this.saveLayout = saveLayout;
         this.getCurrentShortcuts = getCurrentShortcuts;
         this.getLayoutPath = getLayoutPath;
@@ -89,11 +93,54 @@ public partial class FactoryMapWindow : Window
         WriteMapDebugLog("Constructor");
     }
 
+    public event EventHandler? ViewStateChanged;
+
+    public bool HasUserViewState => hasUserViewState;
+
     public void RenderMap(FactoryMapDeviceViewData map)
     {
+        RenderMap(map, resetView: true);
+    }
+
+    public void RenderMap(FactoryMapDeviceViewData map, bool resetView)
+    {
         currentMap = map;
-        WriteMapDebugLog("RenderMap start");
-        RenderCurrentMap(resetView: true);
+        if (resetView)
+        {
+            hasUserViewState = false;
+        }
+
+        WriteMapDebugLog($"RenderMap start resetView={resetView}");
+        RenderCurrentMap(resetView);
+    }
+
+    public FactoryMapViewState CaptureViewState()
+    {
+        return new FactoryMapViewState
+        {
+            FitScale = fitScale,
+            UserScale = userScale,
+            OffsetX = mapOffsetX,
+            OffsetY = mapOffsetY
+        };
+    }
+
+    public void RestoreViewState(FactoryMapViewState? state)
+    {
+        if (state is null)
+        {
+            return;
+        }
+
+        fitScale = state.FitScale > 0 ? state.FitScale : 1.0;
+        userScale = state.UserScale > 0 ? state.UserScale : 1.0;
+        mapOffsetX = state.OffsetX;
+        mapOffsetY = state.OffsetY;
+        hasUserViewState = true;
+        pendingFitToView = false;
+        ApplyMapTransform();
+        RefreshStatusText();
+        WriteMapDebugLog("RestoreViewState");
     }
 
     public void ShowError(string message)
@@ -191,9 +238,9 @@ public partial class FactoryMapWindow : Window
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
             Points = points.Clone(),
-            Tag = edge,
-            ContextMenu = CreateEdgeContextMenu(edge)
+            Tag = edge
         };
+        hitPolyline.PreviewMouseRightButtonDown += Edge_PreviewMouseRightButtonDown;
         MapCanvas.Children.Add(hitPolyline);
     }
 
@@ -231,6 +278,7 @@ public partial class FactoryMapWindow : Window
 
         border.MouseLeftButtonDown += Device_MouseLeftButtonDown;
         border.MouseLeftButtonUp += Device_MouseLeftButtonUp;
+        border.PreviewMouseRightButtonDown += Device_PreviewMouseRightButtonDown;
         Canvas.SetLeft(border, device.X);
         Canvas.SetTop(border, device.Y);
         deviceByElement[border] = device;
@@ -241,6 +289,126 @@ public partial class FactoryMapWindow : Window
         }
 
         MapCanvas.Children.Add(border);
+    }
+
+    private void Device_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (isEditMode)
+        {
+            return;
+        }
+
+        if (sender is not Border { Tag: FactoryMapDeviceViewNode device } border)
+        {
+            return;
+        }
+
+        selectShortcut(device.Shortcut);
+        var menu = CreateDeviceContextMenu(device);
+        menu.PlacementTarget = border;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private ContextMenu CreateDeviceContextMenu(FactoryMapDeviceViewNode device)
+    {
+        var menu = new ContextMenu
+        {
+            Padding = new Thickness(0),
+            Background = WpfBrushes.White,
+            BorderBrush = new SolidColorBrush(WpfColor.FromRgb(209, 213, 219)),
+            BorderThickness = new Thickness(1),
+            Template = CreateCompactContextMenuTemplate()
+        };
+
+        menu.Items.Add(CreateDeviceMenuItem("VSCode", device, FactoryMapShortcutAction.OpenVsCode));
+        menu.Items.Add(CreateDeviceMenuItem("AdminUI", device, FactoryMapShortcutAction.OpenAdminUi));
+        menu.Items.Add(CreateDeviceMenuItem("获取AdminUI连接", device, FactoryMapShortcutAction.DownloadAdminUiLink));
+        menu.Items.Add(CreateDeviceMenuItem("WebUI", device, FactoryMapShortcutAction.OpenWebUi));
+        menu.Items.Add(CreateDeviceMenuItem("编辑", device, FactoryMapShortcutAction.Edit));
+        menu.Items.Add(CreateDeviceMenuItem("删除", device, FactoryMapShortcutAction.Delete));
+
+        return menu;
+    }
+
+    private MenuItem CreateDeviceMenuItem(string header, FactoryMapDeviceViewNode device, FactoryMapShortcutAction action)
+    {
+        var item = new MenuItem
+        {
+            Header = header,
+            MinWidth = 130,
+            Padding = new Thickness(14, 8, 14, 8),
+            Foreground = new SolidColorBrush(WpfColor.FromRgb(17, 24, 39)),
+            Background = WpfBrushes.Transparent,
+            Template = CreateCompactMenuItemTemplate(),
+            Tag = new DeviceContextMenuPayload(device, action)
+        };
+
+        item.Click += DeviceMenuItem_Click;
+        return item;
+    }
+
+    private void DeviceMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: DeviceContextMenuPayload payload })
+        {
+            return;
+        }
+
+        executeShortcutAction(payload.Device.Shortcut, payload.Action);
+    }
+
+    private static ControlTemplate CreateCompactContextMenuTemplate()
+    {
+        var borderFactory = new FrameworkElementFactory(typeof(Border));
+        borderFactory.SetValue(Border.BackgroundProperty, WpfBrushes.White);
+        borderFactory.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Border.BorderBrushProperty));
+        borderFactory.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Border.BorderThicknessProperty));
+        borderFactory.SetValue(Border.SnapsToDevicePixelsProperty, true);
+
+        var presenterFactory = new FrameworkElementFactory(typeof(ItemsPresenter));
+        borderFactory.AppendChild(presenterFactory);
+
+        return new ControlTemplate(typeof(ContextMenu))
+        {
+            VisualTree = borderFactory
+        };
+    }
+
+    private static ControlTemplate CreateCompactMenuItemTemplate()
+    {
+        var rootFactory = new FrameworkElementFactory(typeof(Border), "Root");
+        rootFactory.SetValue(Border.PaddingProperty, new TemplateBindingExtension(System.Windows.Controls.Control.PaddingProperty));
+        rootFactory.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(System.Windows.Controls.Control.BackgroundProperty));
+
+        var presenterFactory = new FrameworkElementFactory(typeof(ContentPresenter));
+        presenterFactory.SetValue(ContentPresenter.ContentSourceProperty, "Header");
+        presenterFactory.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
+        presenterFactory.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        rootFactory.AppendChild(presenterFactory);
+
+        var template = new ControlTemplate(typeof(MenuItem))
+        {
+            VisualTree = rootFactory
+        };
+
+        var highlightTrigger = new Trigger
+        {
+            Property = MenuItem.IsHighlightedProperty,
+            Value = true
+        };
+        highlightTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(WpfColor.FromRgb(229, 241, 251)), "Root"));
+        template.Triggers.Add(highlightTrigger);
+
+        var disabledTrigger = new Trigger
+        {
+            Property = IsEnabledProperty,
+            Value = false
+        };
+        disabledTrigger.Setters.Add(new Setter(ForegroundProperty, new SolidColorBrush(WpfColor.FromRgb(156, 163, 175))));
+        template.Triggers.Add(disabledTrigger);
+
+        return template;
     }
 
     private static PointCollection CreateEdgePoints(FactoryMapDeviceEdgeViewData edge)
@@ -262,18 +430,52 @@ public partial class FactoryMapWindow : Window
         {
             Header = "删除连线",
             Tag = edge,
-            FontFamily = new WpfFontFamily("Microsoft YaHei UI"),
-            FontSize = 12
+            MinWidth = 130,
+            Padding = new Thickness(14, 8, 14, 8),
+            Foreground = new SolidColorBrush(WpfColor.FromRgb(17, 24, 39)),
+            Background = WpfBrushes.Transparent,
+            Template = CreateCompactMenuItemTemplate()
         };
         deleteItem.Click += DeleteEdge_Click;
 
-        var menu = new ContextMenu();
+        var menu = new ContextMenu
+        {
+            Padding = new Thickness(0),
+            Background = WpfBrushes.White,
+            BorderBrush = new SolidColorBrush(WpfColor.FromRgb(209, 213, 219)),
+            BorderThickness = new Thickness(1),
+            Template = CreateCompactContextMenuTemplate()
+        };
         menu.Items.Add(deleteItem);
         return menu;
     }
 
+    private void Edge_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!isEditMode)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (sender is not Polyline { Tag: FactoryMapDeviceEdgeViewData edge } polyline)
+        {
+            return;
+        }
+
+        var menu = CreateEdgeContextMenu(edge);
+        menu.PlacementTarget = polyline;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
     private void DeleteEdge_Click(object sender, RoutedEventArgs e)
     {
+        if (!isEditMode)
+        {
+            return;
+        }
+
         if (sender is not MenuItem { Tag: FactoryMapDeviceEdgeViewData edge } || currentMap is null)
         {
             return;
@@ -413,6 +615,12 @@ public partial class FactoryMapWindow : Window
 
     private void ImportMapButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!isEditMode)
+        {
+            dialogService.ShowError("请先切换到编辑模式后再导入图文件。");
+            return;
+        }
+
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = "JSON 图文件 (*.json)|*.json|所有文件 (*.*)|*.*",
@@ -610,6 +818,13 @@ public partial class FactoryMapWindow : Window
             return;
         }
 
+        if (hasUserViewState)
+        {
+            ApplyMapTransform();
+            RefreshStatusText();
+            return;
+        }
+
         RequestFitMapToView();
     }
 
@@ -637,11 +852,13 @@ public partial class FactoryMapWindow : Window
         var mapPointY = (viewportPoint.Y - mapOffsetY) / oldScale;
 
         userScale = targetUserScale;
+        hasUserViewState = true;
         var newScale = GetTotalScale();
         mapOffsetX = viewportPoint.X - mapPointX * newScale;
         mapOffsetY = viewportPoint.Y - mapPointY * newScale;
         ApplyMapTransform();
         RefreshStatusText();
+        OnViewStateChanged();
         WriteMapDebugLog($"MouseWheel delta={e.Delta}");
         e.Handled = true;
     }
@@ -993,9 +1210,20 @@ public partial class FactoryMapWindow : Window
 
     private void EndMapDrag()
     {
+        var wasDragging = isDraggingMap;
         isDraggingMap = false;
         MapViewport.ReleaseMouseCapture();
         MapViewport.Cursor = WpfCursors.Arrow;
+        if (wasDragging)
+        {
+            hasUserViewState = true;
+            OnViewStateChanged();
+        }
+    }
+
+    private void OnViewStateChanged()
+    {
+        ViewStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void SelectSingleDevice(FactoryMapDeviceViewNode device)
@@ -1123,6 +1351,12 @@ public partial class FactoryMapWindow : Window
     private void RequestFitMapToView()
     {
         WriteMapDebugLog("RequestFitMapToView");
+        if (hasUserViewState)
+        {
+            WriteMapDebugLog("RequestFitMapToView skipped user view state");
+            return;
+        }
+
         if (pendingFitToView)
         {
             return;
@@ -1132,6 +1366,12 @@ public partial class FactoryMapWindow : Window
         Dispatcher.BeginInvoke(new Action(() =>
         {
             pendingFitToView = false;
+            if (hasUserViewState)
+            {
+                WriteMapDebugLog("FitMapToView callback skipped user view state");
+                return;
+            }
+
             if (FitMapToView())
             {
                 fitRetryCount = 0;
@@ -1412,4 +1652,6 @@ devices={devices.Count} minX={FormatDeviceSummary(minXDevice)} maxX={FormatDevic
     {
         return Math.Max(min, Math.Min(max, value));
     }
+
+    private sealed record DeviceContextMenuPayload(FactoryMapDeviceViewNode Device, FactoryMapShortcutAction Action);
 }

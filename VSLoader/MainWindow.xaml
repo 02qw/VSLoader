@@ -195,6 +195,9 @@
                                     </Setter>
                                 </Style>
                             </ContextMenu.Resources>
+                            <MenuItem Header="VSCode"
+                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Command="{Binding PlacementTarget.DataContext.OpenShortcutCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="AdminUI"
                                       Style="{StaticResource CompactMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.OpenAdminUiCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
