@@ -12,16 +12,19 @@ public sealed partial class BatchImportViewModel : ObservableObject
     private readonly IReadOnlyList<ShortcutItem> _existingShortcuts;
     private readonly DialogService _dialogService;
     private readonly BatchImportService _batchImportService;
+    private readonly PathAccessPreflightService _pathAccessPreflightService;
 
     public BatchImportViewModel(
         IEnumerable<ShortcutItem> existingShortcuts,
         DialogService dialogService,
         BatchImportService batchImportService,
-        BatchImportConfig? initialConfig = null)
+        BatchImportConfig? initialConfig = null,
+        PathAccessPreflightService? pathAccessPreflightService = null)
     {
         _existingShortcuts = existingShortcuts.ToList();
         _dialogService = dialogService;
         _batchImportService = batchImportService;
+        _pathAccessPreflightService = pathAccessPreflightService ?? new PathAccessPreflightService();
 
         if (initialConfig is not null)
         {
@@ -125,12 +128,6 @@ public sealed partial class BatchImportViewModel : ObservableObject
             return;
         }
 
-        if (!Directory.Exists(parentPath))
-        {
-            _dialogService.ShowError("目标父级路径不存在或不可访问。");
-            return;
-        }
-
         if (string.IsNullOrWhiteSpace(csvPath))
         {
             _dialogService.ShowError("请选择 CSV 规则文件。");
@@ -147,11 +144,18 @@ public sealed partial class BatchImportViewModel : ObservableObject
         BusyMessage = "正在扫描预览，请稍候...";
         BusyProgressValue = 0;
         BusyProgressMaximum = 1;
-        BusyProgressText = "准备扫描...";
+        BusyProgressText = "正在检测目标路径连通性...";
         BusyCurrentItemText = string.Empty;
 
         try
         {
+            var preflightResult = await _pathAccessPreflightService.CheckDirectoryAsync(parentPath);
+            if (!preflightResult.Success)
+            {
+                _dialogService.ShowError(preflightResult.ErrorMessage ?? "目标父级路径不存在或不可访问。");
+                return;
+            }
+
             var progress = new Progress<BatchImportScanProgress>(scanProgress =>
             {
                 BusyProgressValue = scanProgress.CompletedCount;

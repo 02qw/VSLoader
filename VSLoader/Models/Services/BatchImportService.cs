@@ -132,6 +132,16 @@ public sealed class BatchImportService
             .GroupBy(shortcut => NormalizePathKey(shortcut.TargetPath), StringComparer.OrdinalIgnoreCase)
             .Where(group => !string.IsNullOrWhiteSpace(group.Key))
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var existingPathKeysByName = existingList
+            .Where(shortcut => !string.IsNullOrWhiteSpace(shortcut.Name))
+            .GroupBy(shortcut => NormalizeNameKey(shortcut.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(shortcut => NormalizePathKey(shortcut.TargetPath))
+                    .Where(pathKey => !string.IsNullOrWhiteSpace(pathKey))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
         var previewNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var previewPathKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var isSimpleModuleMapMode = IsSimpleModuleMapMode(rules);
@@ -179,6 +189,7 @@ public sealed class BatchImportService
             var generatedDescription = $"批量新增：{folderName}";
             int? sortNo = null;
             var matchedPattern = string.Empty;
+            var sourceModuleName = string.Empty;
             var sortRuleIndex = int.MaxValue;
 
             if (isSimpleModuleMapMode)
@@ -205,6 +216,7 @@ public sealed class BatchImportService
                 generatedName = simpleResult.GeneratedName.Trim();
                 sortNo = simpleResult.SortNo;
                 matchedPattern = simpleResult.ModuleName;
+                sourceModuleName = simpleResult.ModuleName;
                 sortRuleIndex = simpleResult.SortRuleIndex;
             }
             else
@@ -231,6 +243,7 @@ public sealed class BatchImportService
                 generatedName = GenerateName(matchResult.Rule, folderName, matchResult.RegexMatch, out nameError).Trim();
                 sortNo = TryGetRegexNo(matchResult.RegexMatch);
                 matchedPattern = matchResult.Rule.Pattern;
+                sourceModuleName = matchResult.ModuleName;
                 sortRuleIndex = matchResult.Rule.SortIndex;
             }
 
@@ -242,6 +255,7 @@ public sealed class BatchImportService
                     TargetPath = directory,
                     GeneratedName = generatedName,
                     MatchedPattern = matchedPattern,
+                    SourceModuleName = sourceModuleName,
                     Status = StatusRuleError,
                     Message = nameError,
                     CanImport = false,
@@ -261,6 +275,7 @@ public sealed class BatchImportService
                     FolderName = folderName,
                     TargetPath = directory,
                     MatchedPattern = matchedPattern,
+                    SourceModuleName = sourceModuleName,
                     Status = StatusRuleError,
                     Message = "名称模板生成了空名称。",
                     CanImport = false,
@@ -279,7 +294,7 @@ public sealed class BatchImportService
             var existingShortcutForPath = existingGroupForPath.Count > 0
                 ? existingGroupForPath[0]
                 : null;
-            var hasNameConflict = HasNameConflict(existingList, generatedName, pathKey)
+            var hasNameConflict = HasNameConflict(existingPathKeysByName, generatedName, pathKey)
                 || !previewNames.Add(generatedName);
             if (hasNameConflict)
             {
@@ -289,6 +304,7 @@ public sealed class BatchImportService
                     TargetPath = directory,
                     GeneratedName = generatedName,
                     MatchedPattern = matchedPattern,
+                    SourceModuleName = sourceModuleName,
                     Status = StatusDuplicate,
                     Message = "生成名称与已有快捷项或本次预览项目重复。",
                     CanImport = false,
@@ -303,7 +319,7 @@ public sealed class BatchImportService
 
             if (existingGroupForPath.Count > 1)
             {
-                var keepShortcut = SelectShortcutToKeep(existingGroupForPath, generatedName, directory, generatedDescription);
+                var keepShortcut = SelectShortcutToKeep(existingGroupForPath, generatedName, directory, generatedDescription, sourceModuleName);
                 var duplicateShortcutsToRemove = existingGroupForPath
                     .Where(shortcut => !ReferenceEquals(shortcut, keepShortcut))
                     .ToList();
@@ -314,6 +330,7 @@ public sealed class BatchImportService
                     TargetPath = directory,
                     GeneratedName = generatedName,
                     MatchedPattern = matchedPattern,
+                    SourceModuleName = sourceModuleName,
                     ExistingTargetPath = keepShortcut.TargetPath,
                     ExistingName = keepShortcut.Name,
                     ExistingShortcutToUpdate = keepShortcut,
@@ -334,7 +351,7 @@ public sealed class BatchImportService
 
             if (existingShortcutForPath is not null)
             {
-                if (!HasBatchImportChanges(existingShortcutForPath, generatedName, directory, generatedDescription))
+                if (!HasBatchImportChanges(existingShortcutForPath, generatedName, directory, generatedDescription, sourceModuleName))
                 {
                     items.Add(new BatchImportPreviewItem
                     {
@@ -342,6 +359,7 @@ public sealed class BatchImportService
                         TargetPath = directory,
                         GeneratedName = generatedName,
                         MatchedPattern = matchedPattern,
+                        SourceModuleName = sourceModuleName,
                         ExistingTargetPath = existingShortcutForPath.TargetPath,
                         ExistingName = existingShortcutForPath.Name,
                         ExistingShortcutToUpdate = existingShortcutForPath,
@@ -364,6 +382,7 @@ public sealed class BatchImportService
                     TargetPath = directory,
                     GeneratedName = generatedName,
                     MatchedPattern = matchedPattern,
+                    SourceModuleName = sourceModuleName,
                     ExistingTargetPath = existingShortcutForPath.TargetPath,
                     ExistingName = existingShortcutForPath.Name,
                     ExistingShortcutToUpdate = existingShortcutForPath,
@@ -386,6 +405,7 @@ public sealed class BatchImportService
                 TargetPath = directory,
                 GeneratedName = generatedName,
                 MatchedPattern = matchedPattern,
+                SourceModuleName = sourceModuleName,
                 Status = StatusImportable,
                 Message = "可新增。",
                 CanImport = true,
@@ -443,6 +463,7 @@ public sealed class BatchImportService
                 Name = item.GeneratedName.Trim(),
                 TargetPath = item.TargetPath.Trim(),
                 Description = $"批量新增：{item.FolderName}",
+                SourceModuleName = item.SourceModuleName.Trim(),
                 CreatedAt = now,
                 UpdatedAt = now
             })
@@ -465,6 +486,7 @@ public sealed class BatchImportService
                     Name = item.GeneratedName.Trim(),
                     TargetPath = item.TargetPath.Trim(),
                     Description = $"批量新增：{item.FolderName}",
+                    SourceModuleName = item.SourceModuleName.Trim(),
                     CreatedAt = now,
                     UpdatedAt = now
                 }
@@ -556,7 +578,7 @@ public sealed class BatchImportService
             {
                 if (string.IsNullOrWhiteSpace(rule.ModulePattern))
                 {
-                    return new RuleMatchResult(rule, null, null, StatusSkipped);
+                    return new RuleMatchResult(rule, null, null, StatusSkipped, string.Empty);
                 }
 
                 hasFolderCandidateWithModulePattern = true;
@@ -567,7 +589,7 @@ public sealed class BatchImportService
 
                 if (Regex.IsMatch(moduleName!, rule.ModulePattern, RegexOptions.IgnoreCase))
                 {
-                    return new RuleMatchResult(rule, null, null, StatusSkipped);
+                    return new RuleMatchResult(rule, null, null, StatusSkipped, moduleName ?? string.Empty);
                 }
 
                 continue;
@@ -580,7 +602,7 @@ public sealed class BatchImportService
                 {
                     if (string.IsNullOrWhiteSpace(rule.ModulePattern))
                     {
-                        return new RuleMatchResult(rule, match, null, StatusSkipped);
+                        return new RuleMatchResult(rule, match, null, StatusSkipped, string.Empty);
                     }
 
                     hasFolderCandidateWithModulePattern = true;
@@ -591,7 +613,7 @@ public sealed class BatchImportService
 
                     if (Regex.IsMatch(moduleName!, rule.ModulePattern, RegexOptions.IgnoreCase))
                     {
-                        return new RuleMatchResult(rule, match, null, StatusSkipped);
+                        return new RuleMatchResult(rule, match, null, StatusSkipped, moduleName ?? string.Empty);
                     }
                 }
             }
@@ -604,16 +626,16 @@ public sealed class BatchImportService
                 var status = moduleReadError.StartsWith("ZAM-DEPLOY.xml 解析失败", StringComparison.Ordinal)
                     ? StatusRuleError
                     : StatusSkipped;
-                return new RuleMatchResult(null, null, moduleReadError, status);
+                return new RuleMatchResult(null, null, moduleReadError, status, moduleName ?? string.Empty);
             }
 
             if (!string.IsNullOrWhiteSpace(moduleName))
             {
-                return new RuleMatchResult(null, null, $"模块名未匹配任何规则：{moduleName}", StatusSkipped);
+                return new RuleMatchResult(null, null, $"模块名未匹配任何规则：{moduleName}", StatusSkipped, moduleName);
             }
         }
 
-        return new RuleMatchResult(null, null, null, StatusSkipped);
+        return new RuleMatchResult(null, null, null, StatusSkipped, string.Empty);
     }
 
     private static bool IsSupportedMatchType(string matchType)
@@ -632,14 +654,13 @@ public sealed class BatchImportService
         string folderName,
         string targetDirectory)
     {
-        var noMatch = Regex.Match(folderName, @"^(?<Code>\d+)_(?<Type>[A-Za-z]+)(?<No>\d+)$", RegexOptions.IgnoreCase);
-        if (!noMatch.Success || !noMatch.Groups["No"].Success)
+        var folderIdentity = TryParseFolderIdentity(folderName);
+        if (folderIdentity is null)
         {
-            return SimpleModuleMapResult.Fail(StatusSkipped, "文件夹名无法提取编号 No。");
+            return SimpleModuleMapResult.Fail(StatusSkipped, "文件夹名无法提取类型信息。");
         }
 
-        var noText = noMatch.Groups["No"].Value;
-        var sortNo = int.TryParse(noText, out var parsedNo) ? parsedNo : int.MaxValue;
+        var sortNo = folderIdentity.SortNo;
         var moduleName = TryReadZamModuleName(targetDirectory, out var moduleReadError);
         if (string.IsNullOrWhiteSpace(moduleName))
         {
@@ -657,14 +678,45 @@ public sealed class BatchImportService
             return SimpleModuleMapResult.Fail(StatusSkipped, $"模块名未在 CSV 中配置：{moduleName}", sortNo, moduleName);
         }
 
+        var generatedName = !string.IsNullOrWhiteSpace(folderIdentity.No)
+            ? $"{matchedRule.DisplayName.Trim()}_{folderIdentity.No}"
+            : $"{matchedRule.DisplayName.Trim()}_{folderIdentity.Type}";
+
         return new SimpleModuleMapResult(
             true,
-            $"{matchedRule.DisplayName.Trim()}_{noText}",
+            generatedName,
             moduleName,
             sortNo,
             matchedRule.SortIndex,
             null,
             StatusImportable);
+    }
+
+    private static FolderIdentity? TryParseFolderIdentity(string folderName)
+    {
+        var withNoMatch = Regex.Match(folderName, @"^(?<Code>\d+)_(?<Type>[A-Za-z]+)(?<No>\d+)$", RegexOptions.IgnoreCase);
+        if (withNoMatch.Success && withNoMatch.Groups["No"].Success)
+        {
+            var noText = withNoMatch.Groups["No"].Value;
+            var sortNo = int.TryParse(noText, out var parsedNo) ? parsedNo : int.MaxValue;
+            return new FolderIdentity(
+                withNoMatch.Groups["Code"].Value,
+                withNoMatch.Groups["Type"].Value,
+                noText,
+                sortNo);
+        }
+
+        var withoutNoMatch = Regex.Match(folderName, @"^(?<Code>\d+)_(?<Type>[^\\/]+)$", RegexOptions.IgnoreCase);
+        if (withoutNoMatch.Success && !string.IsNullOrWhiteSpace(withoutNoMatch.Groups["Type"].Value))
+        {
+            return new FolderIdentity(
+                withoutNoMatch.Groups["Code"].Value,
+                withoutNoMatch.Groups["Type"].Value.Trim(),
+                null,
+                null);
+        }
+
+        return null;
     }
 
     private static int GetPreviewStatusSortPriority(string status)
@@ -683,7 +735,7 @@ public sealed class BatchImportService
 
     public static string NormalizePathKey(string path)
     {
-        var normalized = path.Trim().Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        var normalized = Clean(path).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
         while (normalized.Length > 1 && normalized.EndsWith(Path.DirectorySeparatorChar))
         {
             normalized = normalized[..^1];
@@ -692,32 +744,47 @@ public sealed class BatchImportService
         return normalized;
     }
 
-    private static bool HasNameConflict(IEnumerable<ShortcutItem> existingShortcuts, string generatedName, string currentPathKey)
+    private static string NormalizeNameKey(string name)
     {
-        return existingShortcuts.Any(shortcut =>
-            string.Equals(shortcut.Name.Trim(), generatedName, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(NormalizePathKey(shortcut.TargetPath), currentPathKey, StringComparison.OrdinalIgnoreCase));
+        return Clean(name);
+    }
+
+    private static bool HasNameConflict(
+        IReadOnlyDictionary<string, HashSet<string>> existingPathKeysByName,
+        string generatedName,
+        string currentPathKey)
+    {
+        return existingPathKeysByName.TryGetValue(NormalizeNameKey(generatedName), out var pathKeys)
+            && pathKeys.Any(pathKey => !string.Equals(pathKey, currentPathKey, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool HasBatchImportChanges(
         ShortcutItem existingShortcut,
         string generatedName,
         string generatedTargetPath,
-        string generatedDescription)
+        string generatedDescription,
+        string generatedSourceModuleName)
     {
-        return !string.Equals(existingShortcut.Name.Trim(), generatedName.Trim(), StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(existingShortcut.Description.Trim(), generatedDescription.Trim(), StringComparison.OrdinalIgnoreCase)
+        return !string.Equals(Clean(existingShortcut.Name), Clean(generatedName), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Clean(existingShortcut.Description), Clean(generatedDescription), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Clean(existingShortcut.SourceModuleName), Clean(generatedSourceModuleName), StringComparison.OrdinalIgnoreCase)
             || !string.Equals(NormalizePathKey(existingShortcut.TargetPath), NormalizePathKey(generatedTargetPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Clean(string? value)
+    {
+        return value?.Trim() ?? string.Empty;
     }
 
     private static ShortcutItem SelectShortcutToKeep(
         IReadOnlyList<ShortcutItem> duplicates,
         string generatedName,
         string generatedTargetPath,
-        string generatedDescription)
+        string generatedDescription,
+        string generatedSourceModuleName)
     {
         var matchingShortcuts = duplicates
-            .Where(shortcut => !HasBatchImportChanges(shortcut, generatedName, generatedTargetPath, generatedDescription))
+            .Where(shortcut => !HasBatchImportChanges(shortcut, generatedName, generatedTargetPath, generatedDescription, generatedSourceModuleName))
             .ToList();
 
         var candidates = matchingShortcuts.Count > 0 ? matchingShortcuts : duplicates;
@@ -867,7 +934,7 @@ public sealed class BatchImportService
         }
     }
 
-    private sealed record RuleMatchResult(BatchImportRule? Rule, Match? RegexMatch, string? ErrorMessage, string Status);
+    private sealed record RuleMatchResult(BatchImportRule? Rule, Match? RegexMatch, string? ErrorMessage, string Status, string ModuleName);
 
     private sealed record SimpleModuleMapResult(
         bool Success,
@@ -883,4 +950,6 @@ public sealed class BatchImportService
             return new SimpleModuleMapResult(false, string.Empty, moduleName, sortNo, int.MaxValue, errorMessage, status);
         }
     }
+
+    private sealed record FolderIdentity(string Code, string Type, string? No, int? SortNo);
 }

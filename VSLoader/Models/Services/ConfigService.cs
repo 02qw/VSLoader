@@ -71,6 +71,7 @@ public sealed class ConfigService
             config.Hotkey ??= new HotkeyConfig();
             config.BatchImport ??= new BatchImportConfig();
             config.WebUi ??= new WebUiConfig();
+            NormalizeConfig(config);
 
             return new ConfigLoadResult(config, true, null);
         }
@@ -113,6 +114,24 @@ public sealed class ConfigService
         catch (Exception ex)
         {
             return SaveResult.Fail(ex.Message);
+        }
+    }
+
+    private static void NormalizeConfig(AppConfig config)
+    {
+        config.VSCodePath ??= string.Empty;
+        config.AdminUi ??= new AdminUiConfig();
+        config.Hotkey ??= new HotkeyConfig();
+        config.BatchImport ??= new BatchImportConfig();
+        config.WebUi ??= new WebUiConfig();
+        config.Shortcuts ??= new List<ShortcutItem>();
+
+        foreach (var shortcut in config.Shortcuts)
+        {
+            shortcut.Name ??= string.Empty;
+            shortcut.TargetPath ??= string.Empty;
+            shortcut.Description ??= string.Empty;
+            shortcut.SourceModuleName ??= string.Empty;
         }
     }
 }

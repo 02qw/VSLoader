@@ -4,5 +4,6 @@ public enum ShortcutSortField
 {
     Name,
     Description,
+    SourceModuleName,
     UpdatedAt
 }

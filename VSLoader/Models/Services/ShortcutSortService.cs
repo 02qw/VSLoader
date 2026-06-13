@@ -51,6 +51,7 @@ public sealed class ShortcutSortService : IComparer
         return field switch
         {
             ShortcutSortField.Description => CompareText(x.Description, y.Description),
+            ShortcutSortField.SourceModuleName => CompareText(x.SourceModuleName, y.SourceModuleName),
             ShortcutSortField.UpdatedAt => DateTime.Compare(x.UpdatedAt, y.UpdatedAt),
             _ => CompareName(x, y)
         };

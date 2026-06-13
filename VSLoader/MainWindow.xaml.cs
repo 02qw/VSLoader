@@ -26,12 +26,16 @@ public partial class MainWindow : Window
     {
         ["Name"] = "名称",
         ["Description"] = "备注",
+        ["SourceModuleName"] = "原始模块名",
         ["UpdatedAt"] = "更新时间"
     };
 
     private readonly GlobalHotkeyService _hotkeyService = new();
     private readonly FactoryMapLayoutService _factoryMapLayoutService = new();
-    private readonly WindowLayoutService _windowLayoutService = new();
+    private readonly AppSettings _appSettings;
+    private readonly AppSettingsService _appSettingsService;
+    private readonly WorkspaceContext _workspaceContext;
+    private readonly WindowLayoutService _windowLayoutService;
     private readonly RuntimeLayoutState _runtimeLayoutState = new();
     private readonly InitialLayoutRestoreGuard _initialLayoutRestoreGuard = new();
     private CancellationTokenSource? _layoutSaveDebounceCts;
@@ -42,11 +46,22 @@ public partial class MainWindow : Window
     private bool _hasAppliedDefaultLayout;
     private bool _isViewModelEventsAttached;
     private bool _isApplyingRuntimeLayout;
+    private bool _isRestoringShortcutGridColumns;
+    private bool _isShortcutGridColumnTrackingAttached;
+    private bool _hasCleanedUpForClose;
 
-    public MainWindow()
+    internal string WorkspaceId => _workspaceContext.Id;
+
+    public MainWindow(AppSettings appSettings, AppSettingsService appSettingsService, WorkspaceContext workspaceContext)
     {
+        _appSettings = appSettings;
+        _appSettingsService = appSettingsService;
+        _workspaceContext = workspaceContext;
+        _windowLayoutService = new WindowLayoutService(workspaceContext.RootPath);
+
         InitializeComponent();
-        Title = BuildWindowTitle();
+        DataContext = CreateMainViewModel();
+        Title = BuildWindowTitle(workspaceContext);
         InitializeTrayIcon();
         SetInitialSortState();
         LoadWindowLayoutConfig();
@@ -59,9 +74,26 @@ public partial class MainWindow : Window
         Closed += MainWindow_Closed;
     }
 
-    private static string BuildWindowTitle()
+    private MainViewModel CreateMainViewModel()
     {
-        return FormatWindowTitle(Assembly.GetExecutingAssembly().GetName().Version);
+        return new MainViewModel(
+            _appSettings,
+            _appSettingsService,
+            new ConfigService(_workspaceContext.RootPath),
+            new VSCodeLauncherService(),
+            new DialogService(),
+            new BatchImportService(),
+            new AdminUiService(_workspaceContext.UiDownloadDirectory),
+            new WebUiService(),
+            new ShortcutSearchService(),
+            new PasswordProtectionService(),
+            new ClipboardService());
+    }
+
+    private static string BuildWindowTitle(WorkspaceContext workspaceContext)
+    {
+        var title = FormatWindowTitle(Assembly.GetExecutingAssembly().GetName().Version);
+        return FormatWindowTitleWithWorkspace(title, workspaceContext.Name);
     }
 
     internal static string FormatWindowTitle(Version? version)
@@ -77,6 +109,24 @@ public partial class MainWindow : Window
         }
 
         return $"VSLoader v{version.Major}.{version.Minor}.{version.Build}";
+    }
+
+    internal static string FormatWindowTitleWithWorkspace(string baseTitle, string workspaceName)
+    {
+        return string.IsNullOrWhiteSpace(workspaceName)
+            ? baseTitle
+            : $"{baseTitle} - {workspaceName}";
+    }
+
+    internal void RefreshWorkspaceTitle(string workspaceName)
+    {
+        var title = FormatWindowTitle(Assembly.GetExecutingAssembly().GetName().Version);
+        Title = FormatWindowTitleWithWorkspace(title, workspaceName);
+    }
+
+    internal static bool ShouldRestoreFromHotkey(bool isVisible, bool isMinimized, bool isVsLoaderActive)
+    {
+        return !isVisible || isMinimized || !isVsLoaderActive;
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -113,7 +163,12 @@ public partial class MainWindow : Window
 
     private void MainWindow_ContentRendered(object? sender, EventArgs e)
     {
-        Dispatcher.BeginInvoke(new Action(ApplyDefaultWindowLayoutOnce), DispatcherPriority.ApplicationIdle);
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            ApplyDefaultWindowLayoutOnce();
+            RestoreShortcutGridColumnWidths();
+            AttachShortcutGridColumnWidthTracking();
+        }), DispatcherPriority.ApplicationIdle);
     }
 
     private void LoadWindowLayoutConfig()
@@ -210,6 +265,17 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        CleanupForClose();
+    }
+
+    private void CleanupForClose()
+    {
+        if (_hasCleanedUpForClose)
+        {
+            return;
+        }
+
+        _hasCleanedUpForClose = true;
         SaveMainWindowBoundsToSession();
         CloseFactoryMapForExit();
         SaveWindowLayoutImmediately();
@@ -233,7 +299,7 @@ public partial class MainWindow : Window
 
     private void ToggleWindowFromHotkey()
     {
-        if (!IsVisible || WindowState == WindowState.Minimized)
+        if (ShouldRestoreFromHotkey(IsVisible, WindowState == WindowState.Minimized, IsVsLoaderActive()))
         {
             RestoreAndActivate();
             return;
@@ -242,6 +308,11 @@ public partial class MainWindow : Window
         SaveMainWindowBoundsToSession();
         HideFactoryMapWindow();
         WindowState = WindowState.Minimized;
+    }
+
+    private bool IsVsLoaderActive()
+    {
+        return IsActive || _factoryMapWindow is { IsVisible: true, IsActive: true };
     }
 
     private void RestoreAndActivate()
@@ -267,6 +338,20 @@ public partial class MainWindow : Window
     private void FactoryMapButton_Click(object sender, RoutedEventArgs e)
     {
         ToggleFactoryMapWindow();
+    }
+
+    private void WorkspaceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current is App app)
+        {
+            app.SwitchWorkspace(this);
+        }
+    }
+
+    internal void PrepareForWorkspaceSwitch()
+    {
+        CleanupForClose();
+        _isExitRequested = true;
     }
 
     private void ToggleFactoryMapWindow()
@@ -385,10 +470,9 @@ public partial class MainWindow : Window
             : [];
     }
 
-    private static string ResolveFactoryMapLayoutPath()
+    private string ResolveFactoryMapLayoutPath()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return System.IO.Path.Combine(appData, "VSLoader", "factory-map.layout.json");
+        return _workspaceContext.FactoryMapLayoutPath;
     }
 
     private static Rect GetWorkArea()
@@ -644,7 +728,8 @@ public partial class MainWindow : Window
                     UserScale = _runtimeLayoutState.FactoryMapView.UserScale,
                     OffsetX = _runtimeLayoutState.FactoryMapView.OffsetX,
                     OffsetY = _runtimeLayoutState.FactoryMapView.OffsetY
-                }
+                },
+            ShortcutGridColumns = CaptureShortcutGridColumnWidthsOrFallback()
         };
     }
 
@@ -687,6 +772,123 @@ public partial class MainWindow : Window
                 OffsetY = config.FactoryMapView.OffsetY
             };
         }
+
+        _runtimeLayoutState.ShortcutGridColumns = config.ShortcutGridColumns;
+    }
+
+    private void RestoreShortcutGridColumnWidths()
+    {
+        var layout = _runtimeLayoutState.ShortcutGridColumns;
+        if (layout is null)
+        {
+            return;
+        }
+
+        _isRestoringShortcutGridColumns = true;
+        try
+        {
+            ApplyColumnWidth("Name", layout.Name);
+            ApplyColumnWidth("Description", layout.Description);
+            ApplyColumnWidth("SourceModuleName", layout.SourceModuleName);
+            ApplyColumnWidth("UpdatedAt", layout.UpdatedAt);
+        }
+        finally
+        {
+            _isRestoringShortcutGridColumns = false;
+        }
+    }
+
+    private void ApplyColumnWidth(string sortMemberPath, double? width)
+    {
+        if (width is null || width <= 0)
+        {
+            return;
+        }
+
+        var column = ShortcutsGrid.Columns.FirstOrDefault(column => column.SortMemberPath == sortMemberPath);
+        if (column is null)
+        {
+            return;
+        }
+
+        column.Width = new DataGridLength(width.Value, DataGridLengthUnitType.Pixel);
+    }
+
+    private void AttachShortcutGridColumnWidthTracking()
+    {
+        if (_isShortcutGridColumnTrackingAttached)
+        {
+            return;
+        }
+
+        var descriptor = DependencyPropertyDescriptor.FromProperty(
+            DataGridColumn.WidthProperty,
+            typeof(DataGridColumn));
+        if (descriptor is null)
+        {
+            return;
+        }
+
+        foreach (var column in ShortcutsGrid.Columns.Where(IsShortcutGridPersistedColumn))
+        {
+            descriptor.AddValueChanged(column, ShortcutGridColumnWidthChanged);
+        }
+
+        _isShortcutGridColumnTrackingAttached = true;
+    }
+
+    private void ShortcutGridColumnWidthChanged(object? sender, EventArgs e)
+    {
+        if (_isRestoringShortcutGridColumns)
+        {
+            return;
+        }
+
+        _runtimeLayoutState.ShortcutGridColumns = CaptureShortcutGridColumnWidths();
+        ScheduleWindowLayoutSave();
+    }
+
+    private ShortcutGridColumnLayoutConfig? CaptureShortcutGridColumnWidthsOrFallback()
+    {
+        var captured = CaptureShortcutGridColumnWidths();
+        return HasAnyColumnWidth(captured)
+            ? captured
+            : _runtimeLayoutState.ShortcutGridColumns;
+    }
+
+    private ShortcutGridColumnLayoutConfig CaptureShortcutGridColumnWidths()
+    {
+        return new ShortcutGridColumnLayoutConfig
+        {
+            Name = GetColumnActualWidth("Name"),
+            Description = GetColumnActualWidth("Description"),
+            SourceModuleName = GetColumnActualWidth("SourceModuleName"),
+            UpdatedAt = GetColumnActualWidth("UpdatedAt")
+        };
+    }
+
+    private double? GetColumnActualWidth(string sortMemberPath)
+    {
+        var column = ShortcutsGrid.Columns.FirstOrDefault(column => column.SortMemberPath == sortMemberPath);
+        if (column is null || column.ActualWidth <= 0)
+        {
+            return null;
+        }
+
+        return Math.Round(column.ActualWidth, 2);
+    }
+
+    private static bool HasAnyColumnWidth(ShortcutGridColumnLayoutConfig config)
+    {
+        return config.Name > 0
+            || config.Description > 0
+            || config.SourceModuleName > 0
+            || config.UpdatedAt > 0;
+    }
+
+    private static bool IsShortcutGridPersistedColumn(DataGridColumn column)
+    {
+        return column.SortMemberPath is "Name" or "Description" or "SourceModuleName" or "UpdatedAt";
     }
 
     private static Rect ToRect(WindowBoundsConfig bounds)
@@ -996,11 +1198,12 @@ public partial class MainWindow : Window
         {
             "Name" => ShortcutSortField.Name,
             "Description" => ShortcutSortField.Description,
+            "SourceModuleName" => ShortcutSortField.SourceModuleName,
             "UpdatedAt" => ShortcutSortField.UpdatedAt,
             _ => default
         };
 
-        return sortMemberPath is "Name" or "Description" or "UpdatedAt";
+        return sortMemberPath is "Name" or "Description" or "SourceModuleName" or "UpdatedAt";
     }
 
     private static T? FindVisualParent<T>(DependencyObject child)

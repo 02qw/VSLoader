@@ -8,13 +8,21 @@ namespace VSLoader.Services;
 
 public sealed class AdminUiService
 {
+    private readonly string downloadDirectory;
+
+    public AdminUiService()
+        : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VSLoader", "UIdownload"))
+    {
+    }
+
+    public AdminUiService(string downloadDirectory)
+    {
+        this.downloadDirectory = downloadDirectory;
+    }
+
     public string DownloadDirectory
     {
-        get
-        {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            return Path.Combine(appData, "VSLoader", "UIdownload");
-        }
+        get => downloadDirectory;
     }
 
     public async Task<AdminUiDownloadResult> DownloadAllAsync(
@@ -209,7 +217,7 @@ public sealed class AdminUiService
             throw new InvalidOperationException($"{config.PortKey} 不是有效端口：{port}");
         }
 
-        var url = BuildJnlpUrl(config, instanceName, port);
+        var url = BuildJnlpUrl(config, instanceName, port, serviceName);
         var localPath = Path.Combine(DownloadDirectory, $"{instanceName}.jnlp");
 
         return new AdminUiShortcutInfo
@@ -259,15 +267,18 @@ public sealed class AdminUiService
         return value;
     }
 
-    private static string BuildJnlpUrl(AdminUiConfig config, string instanceName, string port)
+    private static string BuildJnlpUrl(AdminUiConfig config, string instanceName, string port, string serviceName)
     {
         var baseUrl = config.BaseUrl.TrimEnd('/') + "/";
         var fileName = $"{Uri.EscapeDataString(instanceName)}_{Uri.EscapeDataString(config.RoleName)}.jnlp";
+        var zlpServiceName = string.IsNullOrWhiteSpace(serviceName)
+            ? instanceName
+            : serviceName.Trim();
         var query = string.Join("&", new[]
         {
             $"host={Uri.EscapeDataString(config.Host)}",
             $"port={Uri.EscapeDataString(port)}",
-            $"zlpService={Uri.EscapeDataString($"{instanceName}.processor")}"
+            $"zlpService={Uri.EscapeDataString($"{zlpServiceName}.processor")}"
         });
 
         return $"{baseUrl}{fileName}?{query}";

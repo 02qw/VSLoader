@@ -42,7 +42,26 @@ eap-sic-Jutze-3D-AOI,矩子3D-AOI
 
         Assert.Equal(BatchImportService.StatusImportable, item.Status);
         Assert.Equal("矩子3D-AOI_007", item.GeneratedName);
+        Assert.Equal("eap-sic-Jutze-3D-AOI", item.SourceModuleName);
         Assert.Equal(7, item.SortNo);
+    }
+
+    [Fact]
+    public void CreateApplyItems_copies_source_module_name_to_shortcut()
+    {
+        var item = new BatchImportPreviewItem
+        {
+            CanImport = true,
+            IsSelected = true,
+            GeneratedName = "矩子3D-AOI_007",
+            TargetPath = @"C:\Instances\12190_TAOI007",
+            FolderName = "12190_TAOI007",
+            SourceModuleName = "eap-sic-Jutze-3D-AOI"
+        };
+
+        var applyItem = Assert.Single(_service.CreateApplyItems([item]));
+
+        Assert.Equal("eap-sic-Jutze-3D-AOI", applyItem.Shortcut.SourceModuleName);
     }
 
     [Fact]
@@ -59,7 +78,22 @@ eap-sic-Jutze-3D-AOI,矩子3D-AOI
     }
 
     [Fact]
-    public void BuildPreview_skips_simple_module_map_when_folder_name_has_no_no()
+    public void BuildPreview_simple_module_map_uses_type_suffix_when_folder_has_no_no()
+    {
+        var folderPath = CreateFolder("10892_CommonUI");
+        WriteZamDeployXml(folderPath, """<application description="Application for eap-sic-Jutze-3D-AOI" />""");
+
+        var item = Assert.Single(_service.BuildPreview(_rootPath, CreateSimpleRules(), []));
+
+        Assert.Equal(BatchImportService.StatusImportable, item.Status);
+        Assert.Equal("矩子3D-AOI_CommonUI", item.GeneratedName);
+        Assert.Equal("10892_CommonUI", item.FolderName);
+        Assert.Null(item.SortNo);
+        Assert.True(item.CanImport);
+    }
+
+    [Fact]
+    public void BuildPreview_simple_module_map_skips_when_folder_identity_cannot_be_parsed()
     {
         var folderPath = CreateFolder("InvalidFolder");
         WriteZamDeployXml(folderPath, """<application description="Application for eap-sic-Jutze-3D-AOI" />""");
@@ -67,7 +101,7 @@ eap-sic-Jutze-3D-AOI,矩子3D-AOI
         var item = Assert.Single(_service.BuildPreview(_rootPath, CreateSimpleRules(), []));
 
         Assert.Equal(BatchImportService.StatusSkipped, item.Status);
-        Assert.Contains("文件夹名无法提取编号 No", item.Message);
+        Assert.Contains("文件夹名无法提取类型信息", item.Message);
         Assert.False(item.CanImport);
     }
 

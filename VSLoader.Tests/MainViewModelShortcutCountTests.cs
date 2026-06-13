@@ -28,13 +28,33 @@ public sealed class MainViewModelShortcutCountTests : IDisposable
                 new ShortcutItem { Name = "垂直炉_001", TargetPath = @"C:\C", Description = "TVF" }
             ]
         });
-        var viewModel = CreateViewModel(configService);
+        var viewModel = CreateViewModel(configService, _configDirectory);
 
         Assert.Equal("3 / 3", viewModel.ShortcutCountText);
 
         viewModel.SearchText = "rt";
 
         Assert.Equal("2 / 3", viewModel.ShortcutCountText);
+    }
+
+    [Fact]
+    public void SearchText_filters_by_source_module_name()
+    {
+        var configService = new ConfigService(_configDirectory);
+        configService.Save(new AppConfig
+        {
+            VSCodePath = @"C:\Tools\Code.exe",
+            Shortcuts =
+            [
+                new ShortcutItem { Name = "矩子3D-AOI_001", TargetPath = @"C:\A", SourceModuleName = "eap-sic-Jutze-3D-AOI" },
+                new ShortcutItem { Name = "热贴机_001", TargetPath = @"C:\B", SourceModuleName = "eap-sic-SiliCool-HotBonder" }
+            ]
+        });
+        var viewModel = CreateViewModel(configService, _configDirectory);
+
+        viewModel.SearchText = "Jutze";
+
+        Assert.Equal("1 / 2", viewModel.ShortcutCountText);
     }
 
     public void Dispose()
@@ -45,9 +65,11 @@ public sealed class MainViewModelShortcutCountTests : IDisposable
         }
     }
 
-    private static MainViewModel CreateViewModel(ConfigService configService)
+    private static MainViewModel CreateViewModel(ConfigService configService, string configDirectory)
     {
         return new MainViewModel(
+            new AppSettings { VSCodePath = @"C:\Tools\Code.exe" },
+            new AppSettingsService(configDirectory),
             configService,
             new VSCodeLauncherService(),
             new DialogService(),

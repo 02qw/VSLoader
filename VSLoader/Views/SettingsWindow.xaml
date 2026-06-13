@@ -108,6 +108,33 @@
                     </Grid>
                 </GroupBox>
 
+                <GroupBox Header="WebUI" Padding="12" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="BaseUrl" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding WebUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Properties 文件名" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding WebUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="实例名字段" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding WebUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="SSL 端口字段" />
+                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" Text="{Binding WebUi.SslPortKey, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                </GroupBox>
+
                 <GroupBox Header="程序快捷键" Padding="12">
                     <StackPanel>
                         <CheckBox Margin="0,0,0,10"

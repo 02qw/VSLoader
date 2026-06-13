@@ -13,6 +13,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(
         string vscodePath,
         AdminUiConfig adminUiConfig,
+        WebUiConfig webUiConfig,
         HotkeyConfig hotkeyConfig,
         DialogService dialogService,
         PasswordProtectionService passwordProtectionService,
@@ -20,6 +21,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         VSCodePath = vscodePath;
         AdminUi = adminUiConfig.Clone();
+        WebUi = webUiConfig.Clone();
         Hotkey = hotkeyConfig.Clone();
         _dialogService = dialogService;
         _passwordProtectionService = passwordProtectionService;
@@ -33,6 +35,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private AdminUiConfig adminUi = new();
+
+    [ObservableProperty]
+    private WebUiConfig webUi = new();
 
     [ObservableProperty]
     private string adminUiPassword = string.Empty;
@@ -73,6 +78,12 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         TrimAdminUiConfig();
         if (!ValidateAdminUiConfig())
+        {
+            return;
+        }
+
+        TrimWebUiConfig();
+        if (!ValidateWebUiConfig())
         {
             return;
         }
@@ -143,6 +154,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         AdminUi.ServiceNameKey = AdminUi.ServiceNameKey.Trim();
     }
 
+    private void TrimWebUiConfig()
+    {
+        WebUi.BaseUrl = WebUi.BaseUrl.Trim();
+        WebUi.InstancePropertiesName = WebUi.InstancePropertiesName.Trim();
+        WebUi.InstanceNameKey = WebUi.InstanceNameKey.Trim();
+        WebUi.SslPortKey = WebUi.SslPortKey.Trim();
+    }
+
     private bool ValidateAdminUiConfig()
     {
         if (string.IsNullOrWhiteSpace(AdminUi.BaseUrl)
@@ -154,6 +173,42 @@ public sealed partial class SettingsViewModel : ObservableObject
             || string.IsNullOrWhiteSpace(AdminUi.ServiceNameKey))
         {
             _dialogService.ShowError("AdminUI 配置项不能为空。");
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ValidateWebUiConfig()
+    {
+        if (string.IsNullOrWhiteSpace(WebUi.BaseUrl))
+        {
+            _dialogService.ShowError("请输入有效的 WebUI BaseUrl。");
+            return false;
+        }
+
+        if (!WebUi.BaseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !WebUi.BaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            _dialogService.ShowError("WebUI BaseUrl 必须以 http:// 或 https:// 开头。");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(WebUi.InstancePropertiesName))
+        {
+            _dialogService.ShowError("请输入 WebUI properties 文件名。");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(WebUi.InstanceNameKey))
+        {
+            _dialogService.ShowError("请输入 WebUI 实例名 Key。");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(WebUi.SslPortKey))
+        {
+            _dialogService.ShowError("请输入 WebUI SSL 端口 Key。");
             return false;
         }
 

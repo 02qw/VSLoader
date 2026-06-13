@@ -9,4 +9,6 @@ public sealed class WindowLayoutConfig
     public bool WasFactoryMapOpen { get; set; }
 
     public FactoryMapViewStateConfig? FactoryMapView { get; set; }
+
+    public ShortcutGridColumnLayoutConfig? ShortcutGridColumns { get; set; }
 }

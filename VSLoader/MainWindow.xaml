@@ -12,9 +12,6 @@
         Width="960"
         MinWidth="900"
         Cursor="{Binding IsBusy, Converter={StaticResource BusyCursorConverter}}">
-    <Window.DataContext>
-        <vm:MainViewModel />
-    </Window.DataContext>
 
     <Grid>
         <DockPanel Background="#F6F7F9"
@@ -78,6 +75,11 @@
                     <Button Width="96"
                             Height="36"
                             Margin="0,0,10,8"
+                            Click="WorkspaceButton_Click"
+                            Content="工作区" />
+                    <Button Width="96"
+                            Height="36"
+                            Margin="0,0,10,8"
                             Command="{Binding AddShortcutCommand}"
                             Content="新增" />
                     <Button Width="132"
@@ -130,7 +132,7 @@
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
                           CanUserReorderColumns="False"
-                          CanUserResizeColumns="False"
+                          CanUserResizeColumns="True"
                           ColumnHeaderHeight="38"
                           EnableColumnVirtualization="True"
                           EnableRowVirtualization="True"
@@ -292,7 +294,8 @@
                         </Style>
                     </DataGrid.RowStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Width="5*"
+                        <DataGridTextColumn Width="4*"
+                                            MinWidth="120"
                                             Binding="{Binding Name}"
                                             Header="名称"
                                             SortMemberPath="Name">
@@ -305,7 +308,8 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Width="8*"
+                        <DataGridTextColumn Width="5*"
+                                            MinWidth="160"
                                             Binding="{Binding Description}"
                                             Header="备注"
                                             SortMemberPath="Description">
@@ -318,6 +322,21 @@
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Width="5*"
+                                            MinWidth="180"
+                                            Binding="{Binding SourceModuleName}"
+                                            Header="原始模块名"
+                                            SortMemberPath="SourceModuleName">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#374151" />
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                    <Setter Property="ToolTip" Value="{Binding SourceModuleName}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Width="4*"
+                                            MinWidth="150"
                                             Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}"
                                             Header="更新时间"
                                             SortMemberPath="UpdatedAt">

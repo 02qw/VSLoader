@@ -14,6 +14,8 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private static readonly TimeSpan TemporaryStatusDuration = TimeSpan.FromSeconds(3);
     private readonly ConfigService _configService;
+    private readonly AppSettings _appSettings;
+    private readonly AppSettingsService _appSettingsService;
     private readonly VSCodeLauncherService _launcherService;
     private readonly DialogService _dialogService;
     private readonly BatchImportService _batchImportService;
@@ -28,11 +30,13 @@ public sealed partial class MainViewModel : ObservableObject
     private int _statusMessageVersion;
 
     public MainViewModel()
-        : this(new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new WebUiService(), new ShortcutSearchService(), new PasswordProtectionService(), new ClipboardService())
+        : this(new AppSettings(), new AppSettingsService(), new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new WebUiService(), new ShortcutSearchService(), new PasswordProtectionService(), new ClipboardService())
     {
     }
 
     public MainViewModel(
+        AppSettings appSettings,
+        AppSettingsService appSettingsService,
         ConfigService configService,
         VSCodeLauncherService launcherService,
         DialogService dialogService,
@@ -43,6 +47,8 @@ public sealed partial class MainViewModel : ObservableObject
         PasswordProtectionService passwordProtectionService,
         ClipboardService clipboardService)
     {
+        _appSettings = appSettings;
+        _appSettingsService = appSettingsService;
         _configService = configService;
         _launcherService = launcherService;
         _dialogService = dialogService;
@@ -254,6 +260,7 @@ public sealed partial class MainViewModel : ObservableObject
         existingShortcut.Name = applyItem.Shortcut.Name;
         existingShortcut.TargetPath = applyItem.Shortcut.TargetPath;
         existingShortcut.Description = applyItem.Shortcut.Description;
+        existingShortcut.SourceModuleName = applyItem.Shortcut.SourceModuleName;
         existingShortcut.UpdatedAt = applyItem.Shortcut.UpdatedAt;
         return true;
     }
@@ -538,7 +545,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var result = _launcherService.Launch(_config.VSCodePath, SelectedShortcut.TargetPath);
+        var result = _launcherService.Launch(_appSettings.VSCodePath, SelectedShortcut.TargetPath);
         if (!result.Success)
         {
             _dialogService.ShowError(result.ErrorMessage ?? "打开 VSCode 失败。");
@@ -548,13 +555,21 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenSettings()
     {
-        var viewModel = new SettingsViewModel(_config.VSCodePath, _config.AdminUi, _config.Hotkey, _dialogService, _passwordProtectionService, TryRegisterHotkey);
+        var viewModel = new SettingsViewModel(_appSettings.VSCodePath, _config.AdminUi, _config.WebUi, _config.Hotkey, _dialogService, _passwordProtectionService, TryRegisterHotkey);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
         {
-            _config.VSCodePath = viewModel.VSCodePath.Trim();
+            _appSettings.VSCodePath = viewModel.VSCodePath.Trim();
+            var appSettingsSaveResult = _appSettingsService.Save(_appSettings);
+            if (!appSettingsSaveResult.Success)
+            {
+                _dialogService.ShowError($"保存程序配置失败：{appSettingsSaveResult.ErrorMessage}");
+                return;
+            }
+
             _config.AdminUi = viewModel.AdminUi.Clone();
+            _config.WebUi = viewModel.WebUi.Clone();
             _config.Hotkey = viewModel.Hotkey.Clone();
             SaveCurrentConfig();
             _configLoadFailed = false;
@@ -647,7 +662,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (!VSCodeLauncherService.IsValidExecutablePath(_config.VSCodePath))
+        if (!VSCodeLauncherService.IsValidExecutablePath(_appSettings.VSCodePath))
         {
             ShowStatusMessage("尚未配置有效的 VSCode 路径，请进入设置。");
             return;
@@ -694,7 +709,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         return _shortcutSearchService.IsTextMatch(shortcut.Name, keyword)
             || Contains(shortcut.TargetPath, keyword)
-            || _shortcutSearchService.IsTextMatch(shortcut.Description, keyword);
+            || _shortcutSearchService.IsTextMatch(shortcut.Description, keyword)
+            || _shortcutSearchService.IsTextMatch(shortcut.SourceModuleName, keyword);
     }
 
     private static bool Contains(string source, string keyword)

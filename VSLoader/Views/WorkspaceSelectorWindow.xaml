@@ -1,0 +1,202 @@
+<Window x:Class="VSLoader.Views.WorkspaceSelectorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="选择工作区"
+        Icon="pack://application:,,,/Assets/tomato.ico"
+        Height="540"
+        Width="760"
+        MinHeight="480"
+        MinWidth="700"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16"
+          Background="White"
+          TextElement.FontFamily="Microsoft YaHei UI">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0"
+                    Margin="0,0,0,12">
+            <TextBlock FontSize="22"
+                       FontWeight="SemiBold"
+                       Foreground="#111827"
+                       Text="VSLoader 工作区" />
+            <TextBlock Margin="0,6,0,0"
+                       FontSize="13"
+                       Foreground="#6B7280"
+                       Text="请选择要打开的工作区" />
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                Background="White"
+                BorderBrush="#DDE1E7"
+                BorderThickness="1"
+                CornerRadius="6">
+            <ListBox x:Name="WorkspaceList"
+                     ItemsSource="{Binding Workspaces}"
+                     SelectedItem="{Binding SelectedWorkspace, Mode=TwoWay}"
+                     MouseDoubleClick="WorkspaceList_MouseDoubleClick"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Padding="0"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter />
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border x:Name="ItemRoot"
+                                Padding="14,12"
+                                Background="White"
+                                BorderBrush="#EEF0F3"
+                                BorderThickness="0,0,0,1"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="3" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border x:Name="SelectedIndicator"
+                                        Background="Transparent" />
+
+                                <Grid Grid.Column="1"
+                                      Margin="12,0,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Row="0"
+                                               Grid.Column="0"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               Foreground="#111827"
+                                               Text="{Binding Name}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Name}" />
+                                    <Border x:Name="StatusBadge"
+                                            Grid.Row="0"
+                                            Grid.Column="1"
+                                            Margin="10,0,0,0"
+                                            Padding="8,2"
+                                            CornerRadius="4"
+                                            Background="White"
+                                            BorderBrush="#E5E7EB"
+                                            BorderThickness="1">
+                                        <TextBlock Foreground="#4B5563"
+                                                   FontSize="12"
+                                                   Text="{Binding StatusText}" />
+                                    </Border>
+                                    <TextBlock Grid.Row="1"
+                                               Grid.ColumnSpan="2"
+                                               Margin="0,7,0,0"
+                                               FontSize="13"
+                                               Foreground="#4B5563"
+                                               Text="{Binding Path}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Path}" />
+                                    <TextBlock Grid.Row="2"
+                                               Grid.ColumnSpan="2"
+                                               Margin="0,6,0,0"
+                                               FontSize="12"
+                                               Foreground="#6B7280">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="创建：{0:yyyy-MM-dd HH:mm}    更新：{1:yyyy-MM-dd HH:mm}">
+                                                <Binding Path="CreatedAt" />
+                                                <Binding Path="UpdatedAt" />
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}"
+                                         Value="True">
+                                <Setter TargetName="ItemRoot" Property="Background" Value="#F6FAFF" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}"
+                                         Value="True">
+                                <Setter TargetName="ItemRoot" Property="Background" Value="#EEF6FF" />
+                                <Setter TargetName="SelectedIndicator" Property="Background" Value="#2563EB" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding HasStatus}"
+                                         Value="False">
+                                <Setter TargetName="StatusBadge" Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <Grid Grid.Row="2"
+              Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <WrapPanel Grid.Column="0"
+                       Orientation="Horizontal">
+                <Button Width="116"
+                        Height="36"
+                        Margin="0,0,10,8"
+                        Command="{Binding StartCreateWorkspaceCommand}"
+                        Content="新建工作区" />
+                <Button Width="96"
+                        Height="36"
+                        Margin="0,0,10,8"
+                        Command="{Binding StartRenameWorkspaceCommand}"
+                        Content="重命名" />
+                <Button Width="96"
+                        Height="36"
+                        Margin="0,0,10,8"
+                        Command="{Binding StartDeleteWorkspaceCommand}"
+                        Content="删除" />
+                <Button Width="144"
+                        Height="36"
+                        Margin="0,0,10,8"
+                        Command="{Binding OpenWorkspaceFolderCommand}"
+                        Content="打开工作区文件夹" />
+            </WrapPanel>
+
+            <StackPanel Grid.Column="1"
+                        Margin="12,0,0,0"
+                        Orientation="Horizontal">
+                <Button Width="96"
+                        Height="36"
+                        Margin="0,0,10,8"
+                        Command="{Binding CancelCommand}"
+                        Content="取消" />
+                <Button Width="96"
+                        Height="36"
+                        Margin="0,0,0,8"
+                        Command="{Binding OpenSelectedWorkspaceCommand}"
+                        Content="打开" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

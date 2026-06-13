@@ -246,9 +246,13 @@ public partial class FactoryMapWindow : Window
 
     private void DrawDevice(FactoryMapDeviceViewNode device)
     {
+        var deviceCode = GetDeviceCode(device);
+        var displayText = string.IsNullOrWhiteSpace(deviceCode)
+            ? device.Name
+            : $"{device.Name}{Environment.NewLine}{deviceCode}";
         var text = new TextBlock
         {
-            Text = device.Name,
+            Text = displayText,
             VerticalAlignment = VerticalAlignment.Center,
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
@@ -271,7 +275,9 @@ public partial class FactoryMapWindow : Window
             Child = text,
             Padding = new Thickness(8, 4, 8, 4),
             Tag = device,
-            ToolTip = $"{device.Name}\n{device.Key}"
+            ToolTip = string.IsNullOrWhiteSpace(deviceCode)
+                ? $"{device.Name}\n{device.Key}"
+                : $"{device.Name}\n{deviceCode}\n{device.Key}"
         };
 
         ApplyDeviceNormalVisual(border);
@@ -289,6 +295,14 @@ public partial class FactoryMapWindow : Window
         }
 
         MapCanvas.Children.Add(border);
+    }
+
+    private static string GetDeviceCode(FactoryMapDeviceViewNode device)
+    {
+        var deviceCode = FactoryMapDeviceCodeParser.Parse(device.Shortcut?.TargetPath);
+        return string.IsNullOrWhiteSpace(deviceCode)
+            ? FactoryMapDeviceCodeParser.Parse(device.Key)
+            : deviceCode;
     }
 
     private void Device_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)

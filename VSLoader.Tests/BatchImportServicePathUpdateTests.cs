@@ -85,6 +85,28 @@ public sealed class BatchImportServicePathUpdateTests : IDisposable
     }
 
     [Fact]
+    public void BuildPreview_handles_legacy_shortcut_null_string_fields()
+    {
+        var folderPath = CreateFolder("3134_TSSP001");
+        var existingShortcuts = new[]
+        {
+            new ShortcutItem
+            {
+                Name = "银烧结_001",
+                TargetPath = folderPath,
+                Description = null!,
+                SourceModuleName = null!
+            }
+        };
+
+        var item = Assert.Single(_service.BuildPreview(_rootPath, CreateTsspRules("银烧结"), existingShortcuts));
+
+        Assert.Equal(BatchImportService.StatusUpdate, item.Status);
+        Assert.True(item.CanImport);
+        Assert.True(item.IsUpdate);
+    }
+
+    [Fact]
     public void BuildPreview_treats_normalized_paths_as_same_target()
     {
         var folderPath = CreateFolder("3134_TSSP001");

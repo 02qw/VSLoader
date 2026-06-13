@@ -25,4 +25,6 @@ public sealed class RuntimeLayoutState
     public double FactoryMapHeight { get; set; }
 
     public FactoryMapViewState? FactoryMapView { get; set; }
+
+    public ShortcutGridColumnLayoutConfig? ShortcutGridColumns { get; set; }
 }
