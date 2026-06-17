@@ -87,7 +87,10 @@ public partial class MainWindow : Window
             new WebUiService(),
             new ShortcutSearchService(),
             new PasswordProtectionService(),
-            new ClipboardService());
+            new ClipboardService(),
+            new UpdateCheckService(),
+            _workspaceContext.UpdateTimePath,
+            factoryMapLayoutPath: _workspaceContext.FactoryMapLayoutPath);
     }
 
     private static string BuildWindowTitle(WorkspaceContext workspaceContext)
@@ -159,6 +162,8 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        viewModel.StartUpdateCheckLoop();
     }
 
     private void MainWindow_ContentRendered(object? sender, EventArgs e)
@@ -279,6 +284,11 @@ public partial class MainWindow : Window
         SaveMainWindowBoundsToSession();
         CloseFactoryMapForExit();
         SaveWindowLayoutImmediately();
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.StopUpdateCheckLoop();
+        }
+
         _hotkeyService.Dispose();
         DisposeTrayIcon();
         DetachViewModelEvents();
@@ -385,7 +395,8 @@ public partial class MainWindow : Window
                 ExecuteShortcutActionFromMap,
                 SaveFactoryMapLayout,
                 GetCurrentShortcutsForMap,
-                ResolveFactoryMapLayoutPath)
+                ResolveFactoryMapLayoutPath,
+                MarkMapFileUsed)
             {
                 Owner = this
             };
@@ -433,6 +444,14 @@ public partial class MainWindow : Window
         }
 
         SyncFactoryMapSelection();
+    }
+
+    private void MarkMapFileUsed(string mapFilePath)
+    {
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.MarkMapFileUsed(mapFilePath);
+        }
     }
 
     private void SyncFactoryMapSelection()

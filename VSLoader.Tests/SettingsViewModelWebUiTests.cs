@@ -53,6 +53,57 @@ public sealed class SettingsViewModelWebUiTests : IDisposable
         Assert.Equal("GUI.WebServer.SSLPort", viewModel.WebUi.SslPortKey);
     }
 
+    [Fact]
+    public void Constructor_clones_update_check_config()
+    {
+        var updateCheckConfig = new UpdateCheckConfig
+        {
+            RulesFilePath = @"C:\rules.csv",
+            MapFilePath = @"C:\map.json",
+            SoftwareVersionFilePath = @"C:\version.txt"
+        };
+
+        var viewModel = CreateViewModel(new WebUiConfig(), updateCheckConfig);
+        viewModel.UpdateCheck.RulesFilePath = @"D:\changed.csv";
+
+        Assert.Equal(@"C:\rules.csv", updateCheckConfig.RulesFilePath);
+        Assert.Equal(@"D:\changed.csv", viewModel.UpdateCheck.RulesFilePath);
+    }
+
+    [Fact]
+    public void Save_trims_active_update_check_paths_and_ignores_legacy_software_version_path()
+    {
+        var viewModel = CreateViewModel(new WebUiConfig());
+        viewModel.UpdateCheck.RulesFilePath = "  ";
+        viewModel.UpdateCheck.MapFilePath = "  C:\\map.json  ";
+        viewModel.UpdateCheck.SoftwareVersionFilePath = "  C:\\version.txt  ";
+
+        viewModel.SaveCommand.Execute(null);
+
+        Assert.True(viewModel.Saved);
+        Assert.Equal(string.Empty, viewModel.UpdateCheck.RulesFilePath);
+        Assert.Equal(@"C:\map.json", viewModel.UpdateCheck.MapFilePath);
+        Assert.Equal("  C:\\version.txt  ", viewModel.UpdateCheck.SoftwareVersionFilePath);
+    }
+
+    [Fact]
+    public void Save_trims_software_update_manifest_path_and_allows_empty_path()
+    {
+        var viewModel = CreateViewModel(new WebUiConfig());
+        viewModel.SoftwareUpdateManifestPath = "  \\\\server\\VSLoaderUpdate\\manifest.json  ";
+
+        viewModel.SaveCommand.Execute(null);
+
+        Assert.True(viewModel.Saved);
+        Assert.Equal(@"\\server\VSLoaderUpdate\manifest.json", viewModel.SoftwareUpdateManifestPath);
+
+        viewModel.SoftwareUpdateManifestPath = "  ";
+        viewModel.SaveCommand.Execute(null);
+
+        Assert.True(viewModel.Saved);
+        Assert.Equal(string.Empty, viewModel.SoftwareUpdateManifestPath);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))
@@ -61,12 +112,14 @@ public sealed class SettingsViewModelWebUiTests : IDisposable
         }
     }
 
-    private SettingsViewModel CreateViewModel(WebUiConfig webUiConfig)
+    private SettingsViewModel CreateViewModel(WebUiConfig webUiConfig, UpdateCheckConfig? updateCheckConfig = null)
     {
         return new SettingsViewModel(
             _validExePath,
+            string.Empty,
             new AdminUiConfig(),
             webUiConfig,
+            updateCheckConfig ?? new UpdateCheckConfig(),
             new HotkeyConfig(),
             new DialogService(),
             new PasswordProtectionService(),

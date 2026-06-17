@@ -22,7 +22,8 @@
                     Content="取消" />
         </StackPanel>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="SettingsScrollViewer"
+                      VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <GroupBox Header="VSCode" Padding="12" Margin="0,0,0,12">
                     <Grid>
@@ -34,6 +35,7 @@
                                  Height="34"
                                  Padding="8,6"
                                  VerticalContentAlignment="Center"
+                                 PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
                                  Text="{Binding VSCodePath, UpdateSourceTrigger=PropertyChanged}" />
                         <Button Grid.Column="1"
                                 Width="80"
@@ -61,25 +63,24 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="BaseUrl" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
-
+                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Host" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.Host, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.Host, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="RoleName" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.RoleName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.RoleName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Properties 文件名" />
-                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="实例名字段" />
-                        <TextBox Grid.Row="4" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="4" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="端口字段" />
-                        <TextBox Grid.Row="5" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.PortKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="5" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.PortKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Text="服务名字段" />
-                        <TextBox Grid.Row="6" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding AdminUi.ServiceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="6" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.ServiceNameKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <CheckBox Grid.Row="7"
                                   Grid.Column="1"
@@ -104,6 +105,7 @@
                                      Height="30"
                                      VerticalContentAlignment="Center"
                                      Padding="8,4"
+                                     PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
                                      PasswordChanged="AdminUiPasswordBox_PasswordChanged" />
                     </Grid>
                 </GroupBox>
@@ -122,16 +124,87 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="BaseUrl" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding WebUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Properties 文件名" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding WebUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="实例名字段" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" Text="{Binding WebUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="SSL 端口字段" />
-                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" Text="{Binding WebUi.SslPortKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.SslPortKey, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                </GroupBox>
+
+                <GroupBox Header="软件更新" Padding="12" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   VerticalAlignment="Center"
+                                   Text="manifest 路径" />
+                        <TextBox Grid.Column="1"
+                                 Height="30"
+                                 Padding="8,4"
+                                 VerticalContentAlignment="Center"
+                                 PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                 Text="{Binding SoftwareUpdateManifestPath, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Column="2"
+                                Width="72"
+                                Margin="8,0,0,0"
+                                Command="{Binding BrowseSoftwareUpdateManifestCommand}"
+                                Content="浏览" />
+                    </Grid>
+                </GroupBox>
+
+                <GroupBox Header="更新检测" Padding="12" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="rules 批量配置文件" />
+                        <TextBox Grid.Row="0"
+                                 Grid.Column="1"
+                                 Height="30"
+                                 Margin="0,0,0,8"
+                                 Padding="8,4"
+                                 VerticalContentAlignment="Center"
+                                 PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                 Text="{Binding UpdateCheck.RulesFilePath, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Row="0"
+                                Grid.Column="2"
+                                Width="72"
+                                Margin="8,0,0,8"
+                                Command="{Binding BrowseRulesFileCommand}"
+                                Content="浏览" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="map 地图配置文件" />
+                        <TextBox Grid.Row="1"
+                                 Grid.Column="1"
+                                 Height="30"
+                                 Margin="0,0,0,8"
+                                 Padding="8,4"
+                                 VerticalContentAlignment="Center"
+                                 PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                 Text="{Binding UpdateCheck.MapFilePath, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Row="1"
+                                Grid.Column="2"
+                                Width="72"
+                                Margin="8,0,0,8"
+                                Command="{Binding BrowseMapFileCommand}"
+                                Content="浏览" />
                     </Grid>
                 </GroupBox>
 
@@ -156,6 +229,7 @@
                                      Padding="8,4"
                                      VerticalContentAlignment="Center"
                                      IsReadOnly="True"
+                                     PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
                                      Text="{Binding HotkeyDisplayText}" />
                             <Button Grid.Column="2"
                                     Width="72"

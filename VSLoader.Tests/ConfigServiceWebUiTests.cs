@@ -29,6 +29,21 @@ public sealed class ConfigServiceWebUiTests : IDisposable
     }
 
     [Fact]
+    public void Load_returns_default_update_check_config_when_missing_from_json()
+    {
+        var service = new ConfigService(_rootPath);
+        File.WriteAllText(service.ConfigPath, """{"VSCodePath":"","Shortcuts":[]}""");
+
+        var result = service.Load();
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.NotNull(result.Config.UpdateCheck);
+        Assert.Equal(string.Empty, result.Config.UpdateCheck.RulesFilePath);
+        Assert.Equal(string.Empty, result.Config.UpdateCheck.MapFilePath);
+        Assert.Equal(string.Empty, result.Config.UpdateCheck.SoftwareVersionFilePath);
+    }
+
+    [Fact]
     public void Save_writes_webui_config_to_workspace_config_json()
     {
         var service = new ConfigService(_rootPath);

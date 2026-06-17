@@ -13,9 +13,11 @@ using WpfCursors = System.Windows.Input.Cursors;
 using WpfFontFamily = System.Windows.Media.FontFamily;
 using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
+using WpfOrientation = System.Windows.Controls.Orientation;
 using WpfPoint = System.Windows.Point;
 using WpfRect = System.Windows.Rect;
 using WpfRectangle = System.Windows.Shapes.Rectangle;
+using WpfHorizontalAlignment = System.Windows.HorizontalAlignment;
 
 namespace VSLoader.Views;
 
@@ -39,6 +41,7 @@ public partial class FactoryMapWindow : Window
     private readonly Func<FactoryMapDeviceViewData, bool> saveLayout;
     private readonly Func<IReadOnlyList<ShortcutItem>> getCurrentShortcuts;
     private readonly Func<string> getLayoutPath;
+    private readonly Action<string>? mapImported;
     private readonly DialogService dialogService = new();
     private readonly FactoryMapLayoutService layoutService = new();
     private readonly Dictionary<Border, FactoryMapDeviceViewNode> deviceByElement = [];
@@ -77,13 +80,15 @@ public partial class FactoryMapWindow : Window
         Action<ShortcutItem, FactoryMapShortcutAction> executeShortcutAction,
         Func<FactoryMapDeviceViewData, bool> saveLayout,
         Func<IReadOnlyList<ShortcutItem>> getCurrentShortcuts,
-        Func<string> getLayoutPath)
+        Func<string> getLayoutPath,
+        Action<string>? mapImported = null)
     {
         this.selectShortcut = selectShortcut;
         this.executeShortcutAction = executeShortcutAction;
         this.saveLayout = saveLayout;
         this.getCurrentShortcuts = getCurrentShortcuts;
         this.getLayoutPath = getLayoutPath;
+        this.mapImported = mapImported;
         InitializeComponent();
         Loaded += (_, _) => RequestFitMapToView();
         ContentRendered += (_, _) => RequestFitMapToView();
@@ -247,13 +252,15 @@ public partial class FactoryMapWindow : Window
     private void DrawDevice(FactoryMapDeviceViewNode device)
     {
         var deviceCode = GetDeviceCode(device);
-        var displayText = string.IsNullOrWhiteSpace(deviceCode)
-            ? device.Name
-            : $"{device.Name}{Environment.NewLine}{deviceCode}";
-        var text = new TextBlock
+        var content = new StackPanel
         {
-            Text = displayText,
+            Orientation = WpfOrientation.Vertical,
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = WpfHorizontalAlignment.Center
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = device.Name,
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.None,
@@ -263,7 +270,26 @@ public partial class FactoryMapWindow : Window
             LineHeight = 15,
             LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             FontWeight = FontWeights.SemiBold
-        };
+        });
+
+        if (!string.IsNullOrWhiteSpace(deviceCode))
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = deviceCode,
+                Margin = new Thickness(0, 1, 0, 0),
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.None,
+                Foreground = new SolidColorBrush(WpfColor.FromRgb(100, 116, 139)),
+                FontFamily = new WpfFontFamily("Microsoft YaHei UI"),
+                FontSize = 11,
+                LineHeight = 14,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                FontWeight = FontWeights.Normal
+            });
+        }
+
         var border = new Border
         {
             Width = DeviceWidth,
@@ -272,7 +298,7 @@ public partial class FactoryMapWindow : Window
             BorderBrush = new SolidColorBrush(WpfColor.FromRgb(203, 213, 225)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
-            Child = text,
+            Child = content,
             Padding = new Thickness(8, 4, 8, 4),
             Tag = device,
             ToolTip = string.IsNullOrWhiteSpace(deviceCode)
@@ -671,6 +697,7 @@ public partial class FactoryMapWindow : Window
         ClearPendingConnectionStart();
         UpdateConnectModeVisual();
         RenderMap(loadResult.Map);
+        mapImported?.Invoke(dialog.FileName);
         SetStatusText($"图文件已导入：应用节点 {loadResult.AppliedDeviceCount} 个，保留连线 {loadResult.KeptEdgeCount} 条，跳过节点 {loadResult.SkippedDeviceCount} 个，跳过连线 {loadResult.SkippedEdgeCount} 条。");
     }
 

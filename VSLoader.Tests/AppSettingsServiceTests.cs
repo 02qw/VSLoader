@@ -24,6 +24,7 @@ public sealed class AppSettingsServiceTests : IDisposable
         Assert.True(File.Exists(service.SettingsPath));
         Assert.True(settings.OpenLastWorkspaceOnStartup);
         Assert.Empty(settings.VSCodePath);
+        Assert.Empty(settings.SoftwareUpdateManifestPath);
         Assert.Empty(settings.Workspaces);
     }
 
@@ -34,6 +35,7 @@ public sealed class AppSettingsServiceTests : IDisposable
         var settings = new AppSettings
         {
             VSCodePath = @"C:\Tools\Code.exe",
+            SoftwareUpdateManifestPath = @"\\server\VSLoaderUpdate\manifest.json",
             LastWorkspaceId = "line-a",
             OpenLastWorkspaceOnStartup = true,
             MigrationCompleted = true,
@@ -56,6 +58,7 @@ public sealed class AppSettingsServiceTests : IDisposable
         Assert.True(saveResult.Success, saveResult.ErrorMessage);
         Assert.Null(warning);
         Assert.Equal(@"C:\Tools\Code.exe", loaded.VSCodePath);
+        Assert.Equal(@"\\server\VSLoaderUpdate\manifest.json", loaded.SoftwareUpdateManifestPath);
         Assert.Equal("line-a", loaded.LastWorkspaceId);
         Assert.True(loaded.MigrationCompleted);
         Assert.Single(loaded.Workspaces);
@@ -73,6 +76,18 @@ public sealed class AppSettingsServiceTests : IDisposable
         Assert.NotNull(warning);
         Assert.Empty(settings.Workspaces);
         Assert.Contains(Directory.GetFiles(_rootPath), path => Path.GetFileName(path).StartsWith("app-settings.broken.", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void LoadOrCreate_returns_empty_software_update_manifest_path_when_missing_from_json()
+    {
+        var service = new AppSettingsService(_rootPath);
+        File.WriteAllText(service.SettingsPath, """{"VSCodePath":"","Workspaces":[]}""");
+
+        var settings = service.LoadOrCreate(out var warning);
+
+        Assert.Null(warning);
+        Assert.Equal(string.Empty, settings.SoftwareUpdateManifestPath);
     }
 
     public void Dispose()

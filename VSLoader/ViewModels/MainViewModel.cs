@@ -1,5 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -24,10 +27,19 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ShortcutSearchService _shortcutSearchService;
     private readonly PasswordProtectionService _passwordProtectionService;
     private readonly ClipboardService _clipboardService;
+    private readonly UpdateCheckService _updateCheckService;
+    private readonly string _updateTimePath;
+    private readonly SoftwareUpdateService _softwareUpdateService;
+    private readonly string _softwareUpdatesRoot;
+    private readonly GlobalConfigPackageService _globalConfigPackageService;
+    private readonly VSCodePathResolver _vsCodePathResolver;
+    private readonly string _factoryMapLayoutPath;
     private AppConfig _config = new();
     private bool _configLoadFailed;
     private bool _hasInvalidConfigFile;
     private int _statusMessageVersion;
+    private CancellationTokenSource? _updateCheckCancellationTokenSource;
+    private UpdateCheckResult? _lastUpdateCheckResult;
 
     public MainViewModel()
         : this(new AppSettings(), new AppSettingsService(), new ConfigService(), new VSCodeLauncherService(), new DialogService(), new BatchImportService(), new AdminUiService(), new WebUiService(), new ShortcutSearchService(), new PasswordProtectionService(), new ClipboardService())
@@ -45,7 +57,14 @@ public sealed partial class MainViewModel : ObservableObject
         WebUiService webUiService,
         ShortcutSearchService shortcutSearchService,
         PasswordProtectionService passwordProtectionService,
-        ClipboardService clipboardService)
+        ClipboardService clipboardService,
+        UpdateCheckService? updateCheckService = null,
+        string? updateTimePath = null,
+        SoftwareUpdateService? softwareUpdateService = null,
+        string? softwareUpdatesRoot = null,
+        GlobalConfigPackageService? globalConfigPackageService = null,
+        VSCodePathResolver? vsCodePathResolver = null,
+        string? factoryMapLayoutPath = null)
     {
         _appSettings = appSettings;
         _appSettingsService = appSettingsService;
@@ -58,6 +77,19 @@ public sealed partial class MainViewModel : ObservableObject
         _shortcutSearchService = shortcutSearchService;
         _passwordProtectionService = passwordProtectionService;
         _clipboardService = clipboardService;
+        _updateCheckService = updateCheckService ?? new UpdateCheckService();
+        _updateTimePath = string.IsNullOrWhiteSpace(updateTimePath)
+            ? Path.Combine(_configService.ConfigDirectory, "updateTime.json")
+            : updateTimePath;
+        _softwareUpdateService = softwareUpdateService ?? new SoftwareUpdateService();
+        _softwareUpdatesRoot = string.IsNullOrWhiteSpace(softwareUpdatesRoot)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VSLoader", "Updates")
+            : softwareUpdatesRoot;
+        _globalConfigPackageService = globalConfigPackageService ?? new GlobalConfigPackageService();
+        _vsCodePathResolver = vsCodePathResolver ?? new VSCodePathResolver();
+        _factoryMapLayoutPath = string.IsNullOrWhiteSpace(factoryMapLayoutPath)
+            ? Path.Combine(_configService.ConfigDirectory, "factory-map.layout.json")
+            : factoryMapLayoutPath;
         ShortcutsView = CollectionViewSource.GetDefaultView(Shortcuts);
         ShortcutsView.Filter = FilterShortcut;
         SetCustomSort(ShortcutSortField.Name, ListSortDirection.Ascending);
@@ -73,6 +105,21 @@ public sealed partial class MainViewModel : ObservableObject
     public HotkeyConfig CurrentHotkey => _config.Hotkey;
 
     public Func<HotkeyConfig, SaveResult>? TryRegisterHotkey { get; set; }
+
+    public Func<string, string, bool> StartUpdater { get; set; } = static (path, arguments) =>
+    {
+        var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            Arguments = arguments,
+            WorkingDirectory = Path.GetDirectoryName(path),
+            UseShellExecute = true
+        });
+
+        return process is not null;
+    };
+
+    public Action RequestApplicationExit { get; set; } = static () => System.Windows.Application.Current.Shutdown();
 
     public ShortcutSortField CurrentSortField { get; private set; } = ShortcutSortField.Name;
 
@@ -100,7 +147,20 @@ public sealed partial class MainViewModel : ObservableObject
     private bool hasStatusMessage;
 
     [ObservableProperty]
+    private string updateNoticeMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool hasUpdateNotice;
+
+    [ObservableProperty]
+    private string updateFailureMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool hasUpdateFailure;
+
+    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddShortcutCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UpdateSoftwareCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenBatchImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(DownloadAdminUiLinksCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenAdminUiCommand))]
@@ -137,6 +197,52 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnSearchTextChanged(string value)
     {
         RefreshShortcutsView();
+    }
+
+    public void StartUpdateCheckLoop()
+    {
+        StopUpdateCheckLoop();
+        _updateCheckCancellationTokenSource = new CancellationTokenSource();
+        _ = RunUpdateCheckLoopAsync(_updateCheckCancellationTokenSource.Token);
+    }
+
+    public void StopUpdateCheckLoop()
+    {
+        if (_updateCheckCancellationTokenSource is null)
+        {
+            return;
+        }
+
+        _updateCheckCancellationTokenSource.Cancel();
+        _updateCheckCancellationTokenSource.Dispose();
+        _updateCheckCancellationTokenSource = null;
+    }
+
+    public void ApplyUpdateCheckResult(UpdateCheckResult result)
+    {
+        if (result.UpdatedItems.Count > 0)
+        {
+            _lastUpdateCheckResult = result;
+            UpdateNoticeMessage = $"检测到更新：{string.Join("、", result.UpdatedItems)}";
+            HasUpdateNotice = true;
+        }
+        else
+        {
+            _lastUpdateCheckResult = null;
+            UpdateNoticeMessage = string.Empty;
+            HasUpdateNotice = false;
+        }
+
+        if (result.Failures.Count > 0)
+        {
+            UpdateFailureMessage = $"更新检测失败：{string.Join("、", result.Failures)}";
+            HasUpdateFailure = true;
+        }
+        else
+        {
+            UpdateFailureMessage = string.Empty;
+            HasUpdateFailure = false;
+        }
     }
 
     public void ApplySort(ShortcutSortField field)
@@ -176,6 +282,32 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private void CloseUpdateNotice()
+    {
+        if (_lastUpdateCheckResult is not null)
+        {
+            var acknowledgeResult = _updateCheckService.AcknowledgeDetectedUpdates(_updateTimePath, _lastUpdateCheckResult);
+            if (!acknowledgeResult.Success)
+            {
+                UpdateFailureMessage = $"更新提醒确认失败：{acknowledgeResult.ErrorMessage}";
+                HasUpdateFailure = true;
+                return;
+            }
+        }
+
+        _lastUpdateCheckResult = null;
+        UpdateNoticeMessage = string.Empty;
+        HasUpdateNotice = false;
+    }
+
+    [RelayCommand]
+    private void CloseUpdateFailure()
+    {
+        UpdateFailureMessage = string.Empty;
+        HasUpdateFailure = false;
+    }
+
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void AddShortcut()
     {
@@ -188,6 +320,311 @@ public sealed partial class MainViewModel : ObservableObject
             SaveCurrentConfig();
             RefreshShortcutsView();
         }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
+    private async Task UpdateSoftwareAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_appSettings.SoftwareUpdateManifestPath))
+        {
+            _dialogService.ShowError("请先进入设置配置软件更新 manifest 路径。");
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            BusyMessage = "正在检查软件版本，请稍候...";
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 100;
+            BusyProgressText = "正在读取 manifest...";
+            BusyCurrentItemText = string.Empty;
+
+            var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+            var manifestPath = _appSettings.SoftwareUpdateManifestPath.Trim();
+            var availability = await _softwareUpdateService.CheckAvailabilityAsync(manifestPath, currentVersion);
+            if (!availability.Success)
+            {
+                _dialogService.ShowError(availability.ErrorMessage);
+                return;
+            }
+
+            if (!availability.UpdateAvailable)
+            {
+                _dialogService.ShowInfo(availability.Message);
+                return;
+            }
+
+            if (!_dialogService.Confirm("确定要更新 VSLoader 吗？\n更新过程中主程序会暂时关闭，并由更新器接管。"))
+            {
+                return;
+            }
+
+            BusyMessage = "正在启动更新器，请稍候...";
+            BusyProgressText = "正在启动更新器...";
+            var updaterPath = Path.Combine(AppContext.BaseDirectory, "VSLoader.Updater.exe");
+
+            if (!File.Exists(updaterPath))
+            {
+                _dialogService.ShowError("当前程序目录缺少 VSLoader.Updater.exe，无法启动更新器。");
+                return;
+            }
+
+            var arguments = BuildUpdaterArguments(
+                manifestPath,
+                currentVersion);
+
+            if (!StartUpdater(updaterPath, arguments))
+            {
+                _dialogService.ShowError("更新器启动失败，主程序不会退出。");
+                return;
+            }
+
+            RequestApplicationExit();
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError($"软件更新失败：{ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+            BusyMessage = string.Empty;
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 0;
+            BusyProgressText = string.Empty;
+            BusyCurrentItemText = string.Empty;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
+    private async Task ExportGlobalConfigAsync()
+    {
+        var defaultFileName = GlobalConfigPackageService.BuildDefaultExportFileName(DateTime.Now);
+        var packagePath = _dialogService.SaveJsonFile(defaultFileName);
+        if (string.IsNullOrWhiteSpace(packagePath))
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            BusyMessage = "正在导出全局配置...";
+            BusyProgressMaximum = 100;
+            BusyProgressValue = 30;
+            BusyProgressText = "正在整理当前工作区配置...";
+            BusyCurrentItemText = string.Empty;
+
+            _config.Shortcuts = Shortcuts.ToList();
+            var result = _globalConfigPackageService.Export(packagePath, _config, _appSettings, _factoryMapLayoutPath);
+            if (!result.Success)
+            {
+                _dialogService.ShowError(result.ErrorMessage ?? "全局配置导出失败。");
+                return;
+            }
+
+            BusyProgressValue = 100;
+            _dialogService.ShowInfo(BuildGlobalConfigExportMessage(packagePath, result));
+            await Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError($"全局配置导出失败：{ex.Message}");
+        }
+        finally
+        {
+            ClearBusyState();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
+    private async Task ImportGlobalConfigAsync()
+    {
+        var packagePath = _dialogService.SelectJsonFile();
+        if (string.IsNullOrWhiteSpace(packagePath))
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            BusyMessage = "正在导入全局配置...";
+            BusyProgressMaximum = 100;
+            BusyProgressValue = 20;
+            BusyProgressText = "正在读取并校验配置包...";
+            BusyCurrentItemText = string.Empty;
+
+            var result = _globalConfigPackageService.Import(
+                packagePath,
+                _configService.ConfigPath,
+                _factoryMapLayoutPath,
+                _appSettings,
+                _ => _vsCodePathResolver.Resolve());
+
+            if (!result.Success)
+            {
+                _dialogService.ShowError(result.ErrorMessage ?? "全局配置导入失败。");
+                return;
+            }
+
+            BusyProgressValue = 70;
+            var saveSettingsResult = _appSettingsService.Save(_appSettings);
+            if (!saveSettingsResult.Success)
+            {
+                _dialogService.ShowError($"保存程序配置失败：{saveSettingsResult.ErrorMessage}");
+                return;
+            }
+
+            LoadConfig();
+            TryRegisterImportedHotkey(result);
+            BusyProgressValue = 100;
+            ApplyGlobalConfigImportStatus(result);
+            _dialogService.ShowInfo(BuildGlobalConfigImportMessage(result));
+            await Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            _dialogService.ShowError($"全局配置导入失败：{ex.Message}");
+        }
+        finally
+        {
+            ClearBusyState();
+        }
+    }
+
+    private string BuildUpdaterArguments(string manifestPath, Version currentVersion)
+    {
+        var targetDirectory = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var builder = new System.Text.StringBuilder();
+        AppendProcessArgument(builder, "--mode");
+        AppendProcessArgument(builder, "update");
+        AppendProcessArgument(builder, "--processId");
+        AppendProcessArgument(builder, Environment.ProcessId.ToString());
+        AppendProcessArgument(builder, "--targetDir");
+        AppendProcessArgument(builder, targetDirectory);
+        AppendProcessArgument(builder, "--mainExeName");
+        AppendProcessArgument(builder, "VSLoader.exe");
+        AppendProcessArgument(builder, "--manifestPath");
+        AppendProcessArgument(builder, manifestPath);
+        AppendProcessArgument(builder, "--currentVersion");
+        AppendProcessArgument(builder, currentVersion.ToString());
+        AppendProcessArgument(builder, "--updatesRoot");
+        AppendProcessArgument(builder, _softwareUpdatesRoot);
+        return builder.ToString().Trim();
+    }
+
+    private static void AppendProcessArgument(System.Text.StringBuilder builder, string value)
+    {
+        if (builder.Length > 0)
+        {
+            builder.Append(' ');
+        }
+
+        builder.Append('"');
+        builder.Append(value.Replace("\"", "\\\"", StringComparison.Ordinal));
+        builder.Append('"');
+    }
+
+    private void TryRegisterImportedHotkey(GlobalConfigImportResult result)
+    {
+        if (TryRegisterHotkey is null || !_config.Hotkey.Enabled)
+        {
+            return;
+        }
+
+        var hotkeyResult = TryRegisterHotkey(_config.Hotkey);
+        if (!hotkeyResult.Success)
+        {
+            result.Warnings.Add($"快捷键注册失败：{hotkeyResult.ErrorMessage}");
+        }
+    }
+
+    private void ApplyGlobalConfigImportStatus(GlobalConfigImportResult result)
+    {
+        if (result.HasInvalidVSCodePath)
+        {
+            ShowStatusMessage("导入完成，但未找到有效 VSCode 路径，请进入设置配置。");
+            return;
+        }
+
+        if (result.Warnings.Count > 0)
+        {
+            ShowStatusMessage("配置导入完成，但部分路径无效，请检查设置。");
+            return;
+        }
+
+        UpdateStatusMessage();
+    }
+
+    private static string BuildGlobalConfigExportMessage(string packagePath, GlobalConfigExportResult result)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine("全局配置导出完成。");
+        builder.AppendLine();
+        builder.AppendLine($"文件：{packagePath}");
+        if (result.Warnings.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("提示：");
+            AppendNumberedLines(builder, result.Warnings);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string BuildGlobalConfigImportMessage(GlobalConfigImportResult result)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.AppendLine(result.Warnings.Count > 0
+            ? "全局配置导入完成，但存在需要检查的问题："
+            : "全局配置导入完成。");
+
+        if (result.ImportedItems.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("已导入：");
+            AppendNumberedLines(builder, result.ImportedItems);
+        }
+
+        if (result.Warnings.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("需要检查：");
+            AppendNumberedLines(builder, result.Warnings);
+        }
+
+        if (result.RequiresMapWindowReload)
+        {
+            builder.AppendLine();
+            builder.AppendLine("如果地图窗口已打开，请关闭后重新打开地图以应用新布局。");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static void AppendNumberedLines(System.Text.StringBuilder builder, IReadOnlyList<string> lines)
+    {
+        for (var index = 0; index < lines.Count; index++)
+        {
+            builder.AppendLine($"{index + 1}. {lines[index]}");
+        }
+    }
+
+    private void ClearBusyState()
+    {
+        IsBusy = false;
+        BusyMessage = string.Empty;
+        BusyProgressValue = 0;
+        BusyProgressMaximum = 0;
+        BusyProgressText = string.Empty;
+        BusyCurrentItemText = string.Empty;
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
@@ -240,6 +677,15 @@ public sealed partial class MainViewModel : ObservableObject
         if (shouldSaveConfig)
         {
             SaveCurrentConfig();
+        }
+
+        if (dialogResult == true)
+        {
+            var markResult = _updateCheckService.MarkRulesUsed(_config.UpdateCheck, _updateTimePath);
+            if (!markResult.Success)
+            {
+                ShowUpdateFailure($"rules 基线更新失败：{markResult.ErrorMessage}");
+            }
         }
     }
 
@@ -555,12 +1001,13 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenSettings()
     {
-        var viewModel = new SettingsViewModel(_appSettings.VSCodePath, _config.AdminUi, _config.WebUi, _config.Hotkey, _dialogService, _passwordProtectionService, TryRegisterHotkey);
+        var viewModel = new SettingsViewModel(_appSettings.VSCodePath, _appSettings.SoftwareUpdateManifestPath, _config.AdminUi, _config.WebUi, _config.UpdateCheck, _config.Hotkey, _dialogService, _passwordProtectionService, TryRegisterHotkey);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
         {
             _appSettings.VSCodePath = viewModel.VSCodePath.Trim();
+            _appSettings.SoftwareUpdateManifestPath = viewModel.SoftwareUpdateManifestPath.Trim();
             var appSettingsSaveResult = _appSettingsService.Save(_appSettings);
             if (!appSettingsSaveResult.Success)
             {
@@ -570,6 +1017,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             _config.AdminUi = viewModel.AdminUi.Clone();
             _config.WebUi = viewModel.WebUi.Clone();
+            _config.UpdateCheck = viewModel.UpdateCheck.Clone();
             _config.Hotkey = viewModel.Hotkey.Clone();
             SaveCurrentConfig();
             _configLoadFailed = false;
@@ -614,6 +1062,56 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateStatusMessage();
     }
 
+    private async Task RunUpdateCheckLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await CheckUpdatesOnceAsync(cancellationToken);
+                await Task.Delay(TimeSpan.FromMinutes(10), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task CheckUpdatesOnceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updateCheckConfig = _config.UpdateCheck.Clone();
+            var updateTimePath = _updateTimePath;
+            var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+            var softwareUpdateManifestPath = _appSettings.SoftwareUpdateManifestPath?.Trim() ?? string.Empty;
+
+            var result = await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return _updateCheckService.Check(updateCheckConfig, updateTimePath, currentVersion, softwareUpdateManifestPath);
+            }, cancellationToken);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ApplyUpdateCheckResult(result));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            var result = new UpdateCheckResult();
+            result.Failures.Add(ex.Message);
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ApplyUpdateCheckResult(result));
+        }
+    }
+
     private void RefreshShortcutsView()
     {
         ShortcutsView.Refresh();
@@ -654,6 +1152,15 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateStatusMessage();
     }
 
+    public void MarkMapFileUsed(string mapFilePath)
+    {
+        var markResult = _updateCheckService.MarkMapUsed(mapFilePath, _updateTimePath);
+        if (!markResult.Success)
+        {
+            ShowUpdateFailure($"map 基线更新失败：{markResult.ErrorMessage}");
+        }
+    }
+
     private void UpdateStatusMessage()
     {
         if (_configLoadFailed)
@@ -677,6 +1184,14 @@ public sealed partial class MainViewModel : ObservableObject
         _statusMessageVersion++;
         StatusMessage = message;
         HasStatusMessage = true;
+    }
+
+    private void ShowUpdateFailure(string message)
+    {
+        UpdateFailureMessage = string.IsNullOrWhiteSpace(UpdateFailureMessage)
+            ? $"更新检测失败：{message}"
+            : $"{UpdateFailureMessage}、{message}";
+        HasUpdateFailure = true;
     }
 
     private async void ShowTemporaryStatusMessage(string message)

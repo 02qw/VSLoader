@@ -30,6 +30,28 @@ public partial class SettingsWindow : Window
         }
     }
 
+    internal static double CalculateWheelScrollOffset(double currentOffset, int delta, double scrollableHeight)
+    {
+        var targetOffset = currentOffset - delta;
+        return Math.Max(0, Math.Min(targetOffset, scrollableHeight));
+    }
+
+    private void SettingsInput_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Delta == 0)
+        {
+            return;
+        }
+
+        var targetOffset = CalculateWheelScrollOffset(
+            SettingsScrollViewer.VerticalOffset,
+            e.Delta,
+            SettingsScrollViewer.ScrollableHeight);
+
+        SettingsScrollViewer.ScrollToVerticalOffset(targetOffset);
+        e.Handled = true;
+    }
+
     private void SettingsWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (DataContext is not SettingsViewModel { IsRecordingHotkey: true } viewModel)

@@ -1,0 +1,6 @@
+﻿{
+    "version":  "3.0.4",
+    "packageFile":  "VSLoader_3.0.4_win-x64.zip",
+    "sha256":  "6c6e4c8b823b85cfa04d8afcb7d6715e7f54ce0fdad00166a44d52d5547e95d6",
+    "releaseNotes":  "\n    V3重构了整个项目，修复了许多已知问题。\n    -3.0.2 修复了最新版本提示错误的问题。\n    -3.0.3 修复了设置配置界面滚动失灵的问题。\n    -3.0.4 updater 的更新内容展示bug修复。\n    "
+}

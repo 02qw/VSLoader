@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "2.0.0",
+    [string]$Version = "2.0.1",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [switch]$FrameworkDependent,
@@ -11,7 +11,9 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectPath = Join-Path $root "VSLoader\VSLoader.csproj"
+$updaterProjectPath = Join-Path $root "VSLoader.Updater\VSLoader.Updater.csproj"
 $publishDir = Join-Path $root "publish"
+$updaterPublishDir = Join-Path $root "publish-updater"
 $installerDir = Join-Path $root "installer"
 $issPath = Join-Path $installerDir "VSLoader.iss"
 $appName = "VSLoader"
@@ -65,11 +67,17 @@ Write-Host "配置：$Configuration"
 Write-Host "运行时：$Runtime"
 
 Assert-FileExists -Path $projectPath -Message "找不到项目文件：$projectPath"
+Assert-FileExists -Path $updaterProjectPath -Message "找不到更新器项目文件：$updaterProjectPath"
 Assert-FileExists -Path $issPath -Message "找不到 Inno Setup 脚本：$issPath"
 
 if (Test-Path -LiteralPath $publishDir) {
     Write-Host "清理旧发布目录：$publishDir"
     Remove-Item -LiteralPath $publishDir -Recurse -Force
+}
+
+if (Test-Path -LiteralPath $updaterPublishDir) {
+    Write-Host "清理旧更新器发布目录：$updaterPublishDir"
+    Remove-Item -LiteralPath $updaterPublishDir -Recurse -Force
 }
 
 $selfContained = -not $FrameworkDependent.IsPresent
@@ -88,7 +96,25 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish 失败。"
 }
 
+Write-Host "正在发布更新器..."
+dotnet publish $updaterProjectPath `
+    -c $Configuration `
+    -r $Runtime `
+    --self-contained:$selfContained `
+    -p:PublishSingleFile=false `
+    -p:Version=$Version `
+    -p:AssemblyVersion=$Version `
+    -p:FileVersion=$Version `
+    -o $updaterPublishDir
+
+if ($LASTEXITCODE -ne 0) {
+    throw "更新器 dotnet publish 失败。"
+}
+
+Copy-Item -Path (Join-Path $updaterPublishDir "*") -Destination $publishDir -Recurse -Force
+
 Assert-FileExists -Path (Join-Path $publishDir "VSLoader.exe") -Message "发布目录缺少 VSLoader.exe。"
+Assert-FileExists -Path (Join-Path $publishDir "VSLoader.Updater.exe") -Message "发布目录缺少 VSLoader.Updater.exe。"
 Assert-FileExists -Path (Join-Path $publishDir "Config\batch-rules.example.csv") -Message "发布目录缺少 Config\batch-rules.example.csv。"
 Assert-FileExists -Path (Join-Path $publishDir "Config\batch-rules.regex.example.csv") -Message "发布目录缺少 Config\batch-rules.regex.example.csv。"
 
@@ -113,4 +139,3 @@ Assert-FileExists -Path $setupPath -Message "安装包生成后未找到：$setu
 
 Write-Host "安装包构建完成：" -ForegroundColor Green
 Write-Host $setupPath
-

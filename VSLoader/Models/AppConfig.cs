@@ -13,4 +13,6 @@ public sealed class AppConfig
     public BatchImportConfig BatchImport { get; set; } = new();
 
     public WebUiConfig WebUi { get; set; } = new();
+
+    public UpdateCheckConfig UpdateCheck { get; set; } = new();
 }

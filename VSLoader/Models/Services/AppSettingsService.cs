@@ -102,6 +102,7 @@ public sealed class AppSettingsService
     private static void Normalize(AppSettings settings)
     {
         settings.VSCodePath ??= string.Empty;
+        settings.SoftwareUpdateManifestPath ??= string.Empty;
         settings.LastWorkspaceId ??= string.Empty;
         settings.Workspaces ??= new List<WorkspaceInfo>();
 

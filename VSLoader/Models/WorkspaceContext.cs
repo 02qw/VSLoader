@@ -19,4 +19,6 @@ public sealed class WorkspaceContext
     public string FactoryMapLayoutPath => Path.Combine(RootPath, "factory-map.layout.json");
 
     public string UiDownloadDirectory => Path.Combine(RootPath, "UIdownload");
+
+    public string UpdateTimePath => Path.Combine(RootPath, "updateTime.json");
 }

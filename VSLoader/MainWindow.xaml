@@ -29,6 +29,68 @@
                            TextWrapping="Wrap" />
             </Border>
 
+            <Border DockPanel.Dock="Top"
+                    Margin="16,10,16,0"
+                    Padding="12,10"
+                    Background="#FFF7D6"
+                    BorderBrush="#E5B84A"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Visibility="{Binding HasUpdateNotice, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               VerticalAlignment="Center"
+                               Foreground="#6B4E00"
+                               Text="{Binding UpdateNoticeMessage}"
+                               TextWrapping="Wrap" />
+                    <Button Grid.Column="1"
+                            Width="28"
+                            Height="24"
+                            Margin="12,0,0,0"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{Binding CloseUpdateNoticeCommand}"
+                            Content="×"
+                            Foreground="#6B4E00" />
+                </Grid>
+            </Border>
+
+            <Border DockPanel.Dock="Top"
+                    Margin="16,10,16,0"
+                    Padding="12,10"
+                    Background="#FEE2E2"
+                    BorderBrush="#FCA5A5"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Visibility="{Binding HasUpdateFailure, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               VerticalAlignment="Center"
+                               Foreground="#7F1D1D"
+                               Text="{Binding UpdateFailureMessage}"
+                               TextWrapping="Wrap" />
+                    <Button Grid.Column="1"
+                            Width="28"
+                            Height="24"
+                            Margin="12,0,0,0"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{Binding CloseUpdateFailureCommand}"
+                            Content="×"
+                            Foreground="#7F1D1D" />
+                </Grid>
+            </Border>
+
             <Grid DockPanel.Dock="Top" Margin="16,16,16,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -82,6 +144,21 @@
                             Margin="0,0,10,8"
                             Command="{Binding AddShortcutCommand}"
                             Content="新增" />
+                    <Button Width="104"
+                            Height="36"
+                            Margin="0,0,10,8"
+                            Command="{Binding UpdateSoftwareCommand}"
+                            Content="更新软件" />
+                    <Button Width="132"
+                            Height="36"
+                            Margin="0,0,10,8"
+                            Command="{Binding ExportGlobalConfigCommand}"
+                            Content="导出全局配置" />
+                    <Button Width="132"
+                            Height="36"
+                            Margin="0,0,10,8"
+                            Command="{Binding ImportGlobalConfigCommand}"
+                            Content="导入全局配置" />
                     <Button Width="132"
                             Height="36"
                             Margin="0,0,10,8"

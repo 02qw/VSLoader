@@ -5,25 +5,25 @@ using WinForms = System.Windows.Forms;
 
 namespace VSLoader.Services;
 
-public sealed class DialogService
+public class DialogService
 {
-    public void ShowInfo(string message)
+    public virtual void ShowInfo(string message)
     {
         ShowMessage(message, MessageDialogKind.Info);
     }
 
-    public void ShowError(string message)
+    public virtual void ShowError(string message)
     {
         ShowMessage(message, MessageDialogKind.Error);
     }
 
-    public bool Confirm(string message)
+    public virtual bool Confirm(string message)
     {
         var dialog = CreateMessageDialog(message, MessageDialogKind.Confirm);
         return dialog.ShowDialog() == true && dialog.Confirmed;
     }
 
-    public string? SelectExeFile()
+    public virtual string? SelectExeFile()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
@@ -35,7 +35,7 @@ public sealed class DialogService
         return dialog.ShowDialog(GetOwnerWindow()) == true ? dialog.FileName : null;
     }
 
-    public string? SelectFile()
+    public virtual string? SelectFile()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
@@ -47,7 +47,33 @@ public sealed class DialogService
         return dialog.ShowDialog(GetOwnerWindow()) == true ? dialog.FileName : null;
     }
 
-    public string? SelectCsvFile()
+    public virtual string? SelectJsonFile()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "JSON 文件 (*.json)|*.json|所有文件 (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        return dialog.ShowDialog(GetOwnerWindow()) == true ? dialog.FileName : null;
+    }
+
+    public virtual string? SaveJsonFile(string defaultFileName)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "JSON 文件 (*.json)|*.json|所有文件 (*.*)|*.*",
+            FileName = defaultFileName,
+            AddExtension = true,
+            DefaultExt = ".json",
+            OverwritePrompt = true
+        };
+
+        return dialog.ShowDialog(GetOwnerWindow()) == true ? dialog.FileName : null;
+    }
+
+    public virtual string? SelectCsvFile()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
@@ -59,7 +85,7 @@ public sealed class DialogService
         return dialog.ShowDialog(GetOwnerWindow()) == true ? dialog.FileName : null;
     }
 
-    public string? SelectFolder()
+    public virtual string? SelectFolder()
     {
         using var dialog = new WinForms.FolderBrowserDialog
         {

@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\tomato.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +17,22 @@
     <PackageReference Include="ToolGood.Words.FirstPinyin" Version="3.1.0.4" />
     <PackageReference Include="ToolGood.Words.Pinyin" Version="3.1.0.4" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VSLoader.Updater\VSLoader.Updater.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false" />
+  </ItemGroup>
+
+  <Target Name="CopyUpdaterToOutput" AfterTargets="Build" Condition="'$(MSBuildProjectName)' == 'VSLoader'">
+    <ItemGroup>
+      <UpdaterOutput Include="..\VSLoader.Updater\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\**\*.*" Condition="'$(RuntimeIdentifier)' != ''" />
+      <UpdaterOutput Include="..\VSLoader.Updater\bin\$(Configuration)\$(TargetFramework)\**\*.*" Condition="'$(RuntimeIdentifier)' == ''" />
+    </ItemGroup>
+    <Copy SourceFiles="@(UpdaterOutput)"
+          DestinationFiles="@(UpdaterOutput->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 
   <ItemGroup>
     <Resource Include="Assets\tomato.ico" />

@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VSLoader\VSLoader.csproj" />
+    <ProjectReference Include="..\VSLoader.Updater\VSLoader.Updater.csproj" />
   </ItemGroup>
 
   <ItemGroup>

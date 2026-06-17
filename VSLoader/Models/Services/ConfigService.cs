@@ -71,6 +71,7 @@ public sealed class ConfigService
             config.Hotkey ??= new HotkeyConfig();
             config.BatchImport ??= new BatchImportConfig();
             config.WebUi ??= new WebUiConfig();
+            config.UpdateCheck ??= new UpdateCheckConfig();
             NormalizeConfig(config);
 
             return new ConfigLoadResult(config, true, null);
@@ -124,6 +125,7 @@ public sealed class ConfigService
         config.Hotkey ??= new HotkeyConfig();
         config.BatchImport ??= new BatchImportConfig();
         config.WebUi ??= new WebUiConfig();
+        config.UpdateCheck ??= new UpdateCheckConfig();
         config.Shortcuts ??= new List<ShortcutItem>();
 
         foreach (var shortcut in config.Shortcuts)

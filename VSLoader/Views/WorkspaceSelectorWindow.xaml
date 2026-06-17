@@ -50,6 +50,10 @@
                         <Setter Property="Background" Value="Transparent" />
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                        <EventSetter Event="PreviewMouseRightButtonDown"
+                                     Handler="WorkspaceItem_PreviewMouseRightButtonDown" />
+                        <EventSetter Event="ContextMenuOpening"
+                                     Handler="WorkspaceItem_ContextMenuOpening" />
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">

@@ -12,16 +12,20 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public SettingsViewModel(
         string vscodePath,
+        string softwareUpdateManifestPath,
         AdminUiConfig adminUiConfig,
         WebUiConfig webUiConfig,
+        UpdateCheckConfig updateCheckConfig,
         HotkeyConfig hotkeyConfig,
         DialogService dialogService,
         PasswordProtectionService passwordProtectionService,
         Func<HotkeyConfig, SaveResult>? tryRegisterHotkey)
     {
         VSCodePath = vscodePath;
+        SoftwareUpdateManifestPath = softwareUpdateManifestPath;
         AdminUi = adminUiConfig.Clone();
         WebUi = webUiConfig.Clone();
+        UpdateCheck = updateCheckConfig.Clone();
         Hotkey = hotkeyConfig.Clone();
         _dialogService = dialogService;
         _passwordProtectionService = passwordProtectionService;
@@ -34,10 +38,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     private string vSCodePath = string.Empty;
 
     [ObservableProperty]
+    private string softwareUpdateManifestPath = string.Empty;
+
+    [ObservableProperty]
     private AdminUiConfig adminUi = new();
 
     [ObservableProperty]
     private WebUiConfig webUi = new();
+
+    [ObservableProperty]
+    private UpdateCheckConfig updateCheck = new();
 
     [ObservableProperty]
     private string adminUiPassword = string.Empty;
@@ -69,6 +79,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void Save()
     {
         VSCodePath = VSCodePath.Trim();
+        SoftwareUpdateManifestPath = SoftwareUpdateManifestPath.Trim();
 
         if (!VSCodeLauncherService.IsValidExecutablePath(VSCodePath))
         {
@@ -88,6 +99,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        TrimUpdateCheckConfig();
+
         if (!ValidateHotkeyConfig())
         {
             return;
@@ -106,6 +119,36 @@ public sealed partial class SettingsViewModel : ObservableObject
         AdminUi.ProtectedPassword = _passwordProtectionService.Protect(AdminUiPassword);
         Saved = true;
         RequestClose?.Invoke(true);
+    }
+
+    [RelayCommand]
+    private void BrowseSoftwareUpdateManifest()
+    {
+        var path = _dialogService.SelectFile();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            SoftwareUpdateManifestPath = path;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseRulesFile()
+    {
+        var path = _dialogService.SelectFile();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            UpdateCheck.RulesFilePath = path;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseMapFile()
+    {
+        var path = _dialogService.SelectFile();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            UpdateCheck.MapFilePath = path;
+        }
     }
 
     [RelayCommand]
@@ -160,6 +203,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         WebUi.InstancePropertiesName = WebUi.InstancePropertiesName.Trim();
         WebUi.InstanceNameKey = WebUi.InstanceNameKey.Trim();
         WebUi.SslPortKey = WebUi.SslPortKey.Trim();
+    }
+
+    private void TrimUpdateCheckConfig()
+    {
+        UpdateCheck.RulesFilePath = UpdateCheck.RulesFilePath.Trim();
+        UpdateCheck.MapFilePath = UpdateCheck.MapFilePath.Trim();
     }
 
     private bool ValidateAdminUiConfig()
