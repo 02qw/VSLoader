@@ -84,6 +84,7 @@ public sealed class MainViewModelGlobalConfigTests : IDisposable
             new ShortcutSearchService(),
             new PasswordProtectionService(),
             new ClipboardService(),
+            updaterRunnerService: null,
             factoryMapLayoutPath: layoutPath);
     }
 

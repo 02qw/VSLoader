@@ -396,6 +396,7 @@ public partial class MainWindow : Window
                 SaveFactoryMapLayout,
                 GetCurrentShortcutsForMap,
                 ResolveFactoryMapLayoutPath,
+                DownloadAdminUiLinksFromMap,
                 MarkMapFileUsed)
             {
                 Owner = this
@@ -1019,6 +1020,21 @@ public partial class MainWindow : Window
                 }
                 break;
         }
+    }
+
+    private async void DownloadAdminUiLinksFromMap()
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        if (!FactoryMapWindow.ShouldInvokeDownloadAdminUiLinks(viewModel.DownloadAdminUiLinksCommand.CanExecute(null)))
+        {
+            return;
+        }
+
+        await viewModel.DownloadAdminUiLinksCommand.ExecuteAsync(null);
     }
 
     private void SelectShortcutInGrid(MainViewModel viewModel, VSLoader.Models.ShortcutItem shortcut)

@@ -231,6 +231,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         isUpdating = false;
         HasError = true;
+        ReleaseNotesText = string.Empty;
+        ShowReleaseNotes = ShouldShowReleaseNotesAfterError(ShowReleaseNotes);
         StatusText = message;
     }
 
@@ -238,11 +240,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         ProgressValue = value;
         StatusText = text;
-        DetailLines.Add($"[{DateTime.Now:HH:mm:ss}] {text}");
-        DetailList.ScrollIntoView(DetailLines[^1]);
+        DetailLines.Add(FormatDetailLine(DateTime.Now, text));
+
+        var lastIndex = GetLastDetailLineIndex(DetailLines.Count);
+        if (lastIndex >= 0)
+        {
+            DetailList.ScrollIntoView(DetailLines[lastIndex]);
+        }
     }
 
-    private void ApplyReleaseNotes(string? releaseNotes)
+    private void ApplyReleaseNotes(string releaseNotes)
     {
         ReleaseNotesText = releaseNotes;
         ShowReleaseNotes = ShouldShowReleaseNotes(manifestLoaded: true);
@@ -251,6 +258,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     internal static bool ShouldShowReleaseNotes(bool manifestLoaded)
     {
         return manifestLoaded;
+    }
+
+    internal static bool ShouldShowReleaseNotesAfterError(bool wasVisible)
+    {
+        return false;
+    }
+
+    internal static string FormatDetailLine(DateTime timestamp, string text)
+    {
+        return $"[{timestamp:HH:mm:ss}] {text}";
+    }
+
+    internal static int GetLastDetailLineIndex(int count)
+    {
+        return count <= 0 ? -1 : count - 1;
     }
 
     private void ConfirmAndStartMainApp(UpdaterOptions options, string title, string message)
@@ -273,10 +295,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static void StartMainApp(UpdaterOptions options)
     {
+        var mainExePath = Path.Combine(options.TargetDirectory ?? string.Empty, options.MainExeName ?? string.Empty);
         Process.Start(new ProcessStartInfo
         {
-            FileName = Path.Combine(options.TargetDirectory, options.MainExeName),
-            WorkingDirectory = options.TargetDirectory,
+            FileName = mainExePath,
+            WorkingDirectory = options.TargetDirectory ?? string.Empty,
             UseShellExecute = true
         });
     }
@@ -290,13 +313,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenErrorLogDirectory()
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VSLoader", "errorLog");
-        Directory.CreateDirectory(directory);
-        Process.Start(new ProcessStartInfo
+        try
         {
-            FileName = directory,
-            UseShellExecute = true
-        });
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VSLoader", "errorLog");
+            Directory.CreateDirectory(directory);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = directory,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusText = BuildOpenErrorLogDirectoryFailureMessage(ex);
+        }
+    }
+
+    internal static string BuildOpenErrorLogDirectoryFailureMessage(Exception exception)
+    {
+        return $"打开日志目录失败：{exception.Message}";
     }
 
     private void CloseAfterError()

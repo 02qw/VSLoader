@@ -10,12 +10,15 @@ namespace VSLoader.Tests;
 public sealed class MainViewModelSoftwareUpdateTests : IDisposable
 {
     private readonly string _rootPath;
+    private readonly string _appDirectory;
     private readonly string _validExePath;
 
     public MainViewModelSoftwareUpdateTests()
     {
         _rootPath = Path.Combine(Path.GetTempPath(), "VSLoader.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_rootPath);
+        _appDirectory = Path.Combine(_rootPath, "app");
+        Directory.CreateDirectory(_appDirectory);
         _validExePath = Path.Combine(_rootPath, "Code.exe");
         File.WriteAllText(_validExePath, string.Empty);
     }
@@ -90,9 +93,8 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
     [Fact]
     public async Task UpdateSoftwareAsync_starts_existing_updater_after_confirmation()
     {
-        var updaterPath = Path.Combine(AppContext.BaseDirectory, "VSLoader.Updater.exe");
-        File.WriteAllText(updaterPath, "updater");
         var manifestPath = WriteNewerManifest();
+        File.WriteAllText(Path.Combine(_appDirectory, "VSLoader.Updater.exe"), "updater");
         var appSettings = new AppSettings
         {
             VSCodePath = _validExePath,
@@ -104,6 +106,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         string? startedPath = null;
         string? startedArguments = null;
         var exitRequested = false;
+        viewModel.GetAppBaseDirectory = () => _appDirectory;
         viewModel.StartUpdater = (path, arguments) =>
         {
             startedPath = path;
@@ -114,7 +117,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
 
         await viewModel.UpdateSoftwareCommand.ExecuteAsync(null);
 
-        Assert.Equal(updaterPath, startedPath);
+        Assert.Equal(Path.Combine(_rootPath, "runner", "VSLoader.Updater.exe"), startedPath);
         Assert.True(exitRequested);
         Assert.Contains("--mode", startedArguments);
         Assert.Contains("update", startedArguments);
@@ -129,8 +132,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
     [Fact]
     public async Task UpdateSoftwareAsync_does_not_exit_when_updater_start_fails()
     {
-        var updaterPath = Path.Combine(AppContext.BaseDirectory, "VSLoader.Updater.exe");
-        File.WriteAllText(updaterPath, "updater");
+        File.WriteAllText(Path.Combine(_appDirectory, "VSLoader.Updater.exe"), "updater");
         var manifestPath = WriteNewerManifest();
         var appSettings = new AppSettings
         {
@@ -141,6 +143,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         dialogService.ConfirmResult = true;
         var viewModel = CreateViewModel(appSettings, dialogService);
         var exitRequested = false;
+        viewModel.GetAppBaseDirectory = () => _appDirectory;
         viewModel.StartUpdater = (_, _) => false;
         viewModel.RequestApplicationExit = () => exitRequested = true;
 
@@ -154,7 +157,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
     [Fact]
     public async Task UpdateSoftwareAsync_shows_error_when_current_updater_is_missing()
     {
-        var updaterPath = Path.Combine(AppContext.BaseDirectory, "VSLoader.Updater.exe");
+        var updaterPath = Path.Combine(_appDirectory, "VSLoader.Updater.exe");
         if (File.Exists(updaterPath))
         {
             File.Delete(updaterPath);
@@ -170,6 +173,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         dialogService.ConfirmResult = true;
         var viewModel = CreateViewModel(appSettings, dialogService);
         var exitRequested = false;
+        viewModel.GetAppBaseDirectory = () => _appDirectory;
         viewModel.RequestApplicationExit = () => exitRequested = true;
 
         await viewModel.UpdateSoftwareCommand.ExecuteAsync(null);
@@ -197,7 +201,10 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
             new UpdateCheckService(),
             Path.Combine(_rootPath, "updateTime.json"),
             new SoftwareUpdateService(),
-            Path.Combine(_rootPath, "Updates"));
+            Path.Combine(_rootPath, "Updates"),
+            null,
+            null,
+            new UpdaterRunnerService(Path.Combine(_rootPath, "runner")));
     }
 
     private string WriteManifest(string packagePath)

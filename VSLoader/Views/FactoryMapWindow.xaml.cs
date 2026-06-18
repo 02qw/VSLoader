@@ -42,6 +42,7 @@ public partial class FactoryMapWindow : Window
     private readonly Func<IReadOnlyList<ShortcutItem>> getCurrentShortcuts;
     private readonly Func<string> getLayoutPath;
     private readonly Action<string>? mapImported;
+    private readonly Action downloadAdminUiLinks;
     private readonly DialogService dialogService = new();
     private readonly FactoryMapLayoutService layoutService = new();
     private readonly Dictionary<Border, FactoryMapDeviceViewNode> deviceByElement = [];
@@ -81,6 +82,7 @@ public partial class FactoryMapWindow : Window
         Func<FactoryMapDeviceViewData, bool> saveLayout,
         Func<IReadOnlyList<ShortcutItem>> getCurrentShortcuts,
         Func<string> getLayoutPath,
+        Action? downloadAdminUiLinks = null,
         Action<string>? mapImported = null)
     {
         this.selectShortcut = selectShortcut;
@@ -88,6 +90,7 @@ public partial class FactoryMapWindow : Window
         this.saveLayout = saveLayout;
         this.getCurrentShortcuts = getCurrentShortcuts;
         this.getLayoutPath = getLayoutPath;
+        this.downloadAdminUiLinks = downloadAdminUiLinks ?? (() => { });
         this.mapImported = mapImported;
         InitializeComponent();
         Loaded += (_, _) => RequestFitMapToView();
@@ -101,6 +104,11 @@ public partial class FactoryMapWindow : Window
     public event EventHandler? ViewStateChanged;
 
     public bool HasUserViewState => hasUserViewState;
+
+    internal static bool ShouldInvokeDownloadAdminUiLinks(bool canExecute)
+    {
+        return canExecute;
+    }
 
     public void RenderMap(FactoryMapDeviceViewData map)
     {
@@ -731,6 +739,11 @@ public partial class FactoryMapWindow : Window
         }
 
         SetStatusText("图文件已导出。");
+    }
+
+    private void DownloadAdminUiLinksButton_Click(object sender, RoutedEventArgs e)
+    {
+        downloadAdminUiLinks();
     }
 
     private void FactoryMapWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)

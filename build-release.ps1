@@ -1,14 +1,21 @@
 param(
-    [string]$Version = "3.0.4",
+    [string]$Version = "3.1.0",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [string]$UpdateOutputDir = ".\release-update",
     [string]$ReleaseNotes = 
     "
-    V3重构了整个项目，修复了许多已知问题。
+    V3:
     -3.0.2 修复了最新版本提示错误的问题。
     -3.0.3 修复了设置配置界面滚动失灵的问题。
     -3.0.4 updater 的更新内容展示bug修复。
+    -3.0.5 修复了一些已知的bug。
+    -3.0.6 优化了updater的更新内容展示逻辑。
+    -3.0.7 修复部分bug。
+    -3.0.8 优化了更新逻辑。
+    -3.0.9 测试0.8更新逻辑。
+    -3.0.10 测试0.9更新逻辑。
+    -3.1.0 地图增添自动获取连接功能。
     "
 )
 

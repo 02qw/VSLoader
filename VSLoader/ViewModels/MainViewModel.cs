@@ -33,6 +33,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly string _softwareUpdatesRoot;
     private readonly GlobalConfigPackageService _globalConfigPackageService;
     private readonly VSCodePathResolver _vsCodePathResolver;
+    private readonly UpdaterRunnerService _updaterRunnerService;
     private readonly string _factoryMapLayoutPath;
     private AppConfig _config = new();
     private bool _configLoadFailed;
@@ -64,6 +65,7 @@ public sealed partial class MainViewModel : ObservableObject
         string? softwareUpdatesRoot = null,
         GlobalConfigPackageService? globalConfigPackageService = null,
         VSCodePathResolver? vsCodePathResolver = null,
+        UpdaterRunnerService? updaterRunnerService = null,
         string? factoryMapLayoutPath = null)
     {
         _appSettings = appSettings;
@@ -87,6 +89,7 @@ public sealed partial class MainViewModel : ObservableObject
             : softwareUpdatesRoot;
         _globalConfigPackageService = globalConfigPackageService ?? new GlobalConfigPackageService();
         _vsCodePathResolver = vsCodePathResolver ?? new VSCodePathResolver();
+        _updaterRunnerService = updaterRunnerService ?? new UpdaterRunnerService();
         _factoryMapLayoutPath = string.IsNullOrWhiteSpace(factoryMapLayoutPath)
             ? Path.Combine(_configService.ConfigDirectory, "factory-map.layout.json")
             : factoryMapLayoutPath;
@@ -118,6 +121,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         return process is not null;
     };
+
+    public Func<string> GetAppBaseDirectory { get; set; } = static () => AppContext.BaseDirectory;
 
     public Action RequestApplicationExit { get; set; } = static () => System.Windows.Application.Current.Shutdown();
 
@@ -367,11 +372,18 @@ public sealed partial class MainViewModel : ObservableObject
 
             BusyMessage = "正在启动更新器，请稍候...";
             BusyProgressText = "正在启动更新器...";
-            var updaterPath = Path.Combine(AppContext.BaseDirectory, "VSLoader.Updater.exe");
-
+            var appBaseDirectory = GetAppBaseDirectory();
+            var updaterPath = Path.Combine(appBaseDirectory, "VSLoader.Updater.exe");
             if (!File.Exists(updaterPath))
             {
                 _dialogService.ShowError("当前程序目录缺少 VSLoader.Updater.exe，无法启动更新器。");
+                return;
+            }
+
+            var runnerResult = _updaterRunnerService.Prepare(appBaseDirectory);
+            if (!runnerResult.Success)
+            {
+                _dialogService.ShowError(runnerResult.ErrorMessage);
                 return;
             }
 
@@ -379,7 +391,7 @@ public sealed partial class MainViewModel : ObservableObject
                 manifestPath,
                 currentVersion);
 
-            if (!StartUpdater(updaterPath, arguments))
+            if (!StartUpdater(runnerResult.RunnerUpdaterPath, arguments))
             {
                 _dialogService.ShowError("更新器启动失败，主程序不会退出。");
                 return;
