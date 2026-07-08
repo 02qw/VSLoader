@@ -179,17 +179,68 @@ public sealed class AdminUiAutoPasteServiceTests
     }
 
     [Fact]
-    public async Task TryPasteAsync_waits_until_adminui_is_foreground_and_sends_once()
+    public async Task TryPasteAsync_logs_scan_summary_and_matched_dialog_without_noisy_candidates()
     {
-        var windows = new Queue<ForegroundWindowInfo?>([
-            new ForegroundWindowInfo { Handle = new IntPtr(1), Title = "VSLoader", ProcessName = "VSLoader" },
-            new ForegroundWindowInfo { Handle = new IntPtr(2), Title = "TAOI008.processor", ProcessName = "javaw" },
-            new ForegroundWindowInfo { Handle = new IntPtr(2), Title = "TAOI008.processor", ProcessName = "javaw" }
-        ]);
+        var rootPath = Path.Combine(Path.GetTempPath(), "VSLoader.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+        try
+        {
+            var dialog = new ForegroundWindowInfo
+            {
+                Handle = new IntPtr(9),
+                Title = "TAOI008.processor",
+                ProcessName = "javaw",
+                ClassName = "SunAwtDialog"
+            };
+            var service = new AdminUiAutoPasteService(
+                () => new ForegroundWindowInfo { Handle = new IntPtr(1), Title = "VSCode", ProcessName = "Code", ClassName = "Chrome_WidgetWin_1" },
+                () => new[]
+                {
+                    new ForegroundWindowInfo { Handle = new IntPtr(8), Title = "TAOI008.processor", ProcessName = "javaw", ClassName = "SunAwtFrame" },
+                    new ForegroundWindowInfo { Handle = new IntPtr(7), Title = "Browser", ProcessName = "chrome", ClassName = "Chrome_WidgetWin_1" },
+                    dialog
+                },
+                _ => { },
+                (_, _) => Task.CompletedTask,
+                new AdminUiAutoPasteLogService(rootPath));
+
+            var result = await service.TryPasteAsync(new AdminUiConfig
+            {
+                AutoPastePasswordEnabled = true,
+                AutoPasteInitialDelayMilliseconds = 0,
+                AutoPastePollIntervalMilliseconds = 1,
+                AutoPasteTimeoutSeconds = 1
+            });
+
+            Assert.True(result.Success, result.Message);
+            var log = File.ReadAllText(Path.Combine(rootPath, "adminui-autopaste.log"));
+            Assert.Contains("[WindowScanStart]", log);
+            Assert.Contains("[WindowScanEnd]", log);
+            Assert.Contains("[WindowMatch]", log);
+            Assert.Contains("handle=9", log);
+            Assert.DoesNotContain("[WindowCandidate]", log);
+            Assert.DoesNotContain("Browser", log);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TryPasteAsync_does_not_use_foreground_window_fallback_without_sun_awt_dialog()
+    {
         var sendCount = 0;
         var service = new AdminUiAutoPasteService(
-            () => windows.Count > 0 ? windows.Dequeue() : null,
-            () => sendCount++,
+            () => new ForegroundWindowInfo
+            {
+                Handle = new IntPtr(2),
+                Title = "TAOI008.processor",
+                ProcessName = "javaw",
+                ClassName = string.Empty
+            },
+            () => Array.Empty<ForegroundWindowInfo>(),
+            _ => sendCount++,
             (_, _) => Task.CompletedTask);
 
         var result = await service.TryPasteAsync(new AdminUiConfig
@@ -200,9 +251,9 @@ public sealed class AdminUiAutoPasteServiceTests
             AutoPasteTimeoutSeconds = 1
         });
 
-        Assert.True(result.Success, result.Message);
-        Assert.Equal(1, sendCount);
-        Assert.Equal("javaw", result.MatchedWindow?.ProcessName);
+        Assert.False(result.Success);
+        Assert.Equal(0, sendCount);
+        Assert.Contains("未检测到 AdminUI 登录窗口", result.Message);
     }
 
     [Fact]
@@ -215,13 +266,14 @@ public sealed class AdminUiAutoPasteServiceTests
             ProcessName = "javaw",
             ClassName = "SunAwtDialog"
         };
-        var windows = new Queue<ForegroundWindowInfo?>([
-            new ForegroundWindowInfo { Handle = new IntPtr(1), Title = "TAOI008.processor", ProcessName = "javaw", ClassName = "SunAwtFrame" },
-            dialog
+        var scans = new Queue<IReadOnlyList<ForegroundWindowInfo>>([
+            [new ForegroundWindowInfo { Handle = new IntPtr(1), Title = "TAOI008.processor", ProcessName = "javaw", ClassName = "SunAwtFrame" }],
+            [dialog]
         ]);
         ForegroundWindowInfo? sentWindow = null;
         var service = new AdminUiAutoPasteService(
-            () => windows.Count > 0 ? windows.Dequeue() : dialog,
+            () => null,
+            () => scans.Count > 0 ? scans.Dequeue() : [dialog],
             window => sentWindow = window,
             (_, _) => Task.CompletedTask);
 
@@ -244,11 +296,13 @@ public sealed class AdminUiAutoPasteServiceTests
         {
             Handle = new IntPtr(987),
             Title = "TAOI008.processor",
-            ProcessName = "javaw"
+            ProcessName = "javaw",
+            ClassName = "SunAwtDialog"
         };
         ForegroundWindowInfo? sentWindow = null;
         var service = new AdminUiAutoPasteService(
-            () => matchedWindow,
+            () => null,
+            () => [matchedWindow],
             window => sentWindow = window,
             (_, _) => Task.CompletedTask);
 
@@ -267,13 +321,16 @@ public sealed class AdminUiAutoPasteServiceTests
     [Fact]
     public async Task TryPasteAsync_returns_failure_when_keyboard_sender_fails()
     {
+        var dialog = new ForegroundWindowInfo
+        {
+            Handle = new IntPtr(987),
+            Title = "TAOI008.processor",
+            ProcessName = "javaw",
+            ClassName = "SunAwtDialog"
+        };
         var service = new AdminUiAutoPasteService(
-            () => new ForegroundWindowInfo
-            {
-                Handle = new IntPtr(987),
-                Title = "TAOI008.processor",
-                ProcessName = "javaw"
-            },
+            () => null,
+            () => [dialog],
             _ => throw new InvalidOperationException("send failed"),
             (_, _) => Task.CompletedTask);
 
@@ -308,7 +365,7 @@ public sealed class AdminUiAutoPasteServiceTests
 
         Assert.False(result.Success);
         Assert.Equal(0, sendCount);
-        Assert.Contains("未检测到 AdminUI 前台窗口", result.Message);
+        Assert.Contains("未检测到 AdminUI 登录窗口", result.Message);
     }
 
     [Fact]

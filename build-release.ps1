@@ -6,8 +6,8 @@ param(
     [string]$ReleaseNotes = 
 "
 更新日志:
+-自动登录增强
 -修复节点边缘连线超出
--自动登录加强版
 -小范围UI重构
 "
 #History

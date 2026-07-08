@@ -11,14 +11,20 @@ public sealed class KeyboardInputService
     private const ushort VirtualKeyControl = 0x11;
     private const ushort VirtualKeyV = 0x56;
     private const ushort VirtualKeyEnter = 0x0D;
-    internal const int FocusSettleDelayMilliseconds = 120;
+    internal const int FocusSettleDelayMilliseconds = 80;
     private static readonly TimeSpan FocusSettleDelay = TimeSpan.FromMilliseconds(FocusSettleDelayMilliseconds);
-    internal const int PasteBeforeEnterDelayMilliseconds = 0;
+    internal const int ForceFocusRetryTimeoutMilliseconds = 1500;
+    internal const int ForceFocusRetryIntervalMilliseconds = 40;
+    internal const int CriticalInputFocusMaxAttempts = 3;
+    private static readonly TimeSpan ForceFocusRetryInterval = TimeSpan.FromMilliseconds(ForceFocusRetryIntervalMilliseconds);
+    internal const int PasteBeforeEnterDelayMilliseconds = 80;
     private static readonly TimeSpan PasteBeforeEnterDelay = TimeSpan.FromMilliseconds(PasteBeforeEnterDelayMilliseconds);
     private readonly Func<ForegroundWindowInfo?> getForegroundWindowInfo;
     private readonly Func<IntPtr, bool> setForegroundWindow;
     private readonly Func<string, uint, (uint SentInputCount, int NativeErrorCode)> sendShortcut;
     private readonly Action<TimeSpan> sleep;
+    private readonly Func<bool, (bool Success, int NativeErrorCode)> blockInput;
+    private readonly Func<ICriticalInputOverlayScope> showOverlay;
 
     internal static int SendInputStructSize => Marshal.SizeOf<Input>();
 
@@ -27,7 +33,9 @@ public sealed class KeyboardInputService
             () => new ForegroundWindowService().GetForegroundWindowInfo(),
             SetForegroundWindow,
             SendShortcutWithSendInput,
-            Thread.Sleep)
+            Thread.Sleep,
+            block => (BlockInput(block), Marshal.GetLastWin32Error()),
+            new CriticalInputOverlayService().Show)
     {
     }
 
@@ -35,12 +43,16 @@ public sealed class KeyboardInputService
         Func<ForegroundWindowInfo?> getForegroundWindowInfo,
         Func<IntPtr, bool> setForegroundWindow,
         Func<string, uint, (uint SentInputCount, int NativeErrorCode)> sendShortcut,
-        Action<TimeSpan> sleep)
+        Action<TimeSpan> sleep,
+        Func<bool, (bool Success, int NativeErrorCode)>? blockInput = null,
+        Func<ICriticalInputOverlayScope>? showOverlay = null)
     {
         this.getForegroundWindowInfo = getForegroundWindowInfo;
         this.setForegroundWindow = setForegroundWindow;
         this.sendShortcut = sendShortcut;
         this.sleep = sleep;
+        this.blockInput = blockInput ?? (_ => (true, 0));
+        this.showOverlay = showOverlay ?? (() => CriticalInputOverlayService.ShowInactiveScope());
     }
 
     public void SendPasteAndEnter()
@@ -53,44 +65,105 @@ public sealed class KeyboardInputService
         logService?.LogStage(AdminUiAutoPasteStage.BeforePaste, targetWindow);
         logService?.LogKeyboardPlan(targetWindow, FocusSettleDelayMilliseconds, PasteBeforeEnterDelayMilliseconds, SendInputStructSize);
         EnsureTargetForeground(targetWindow, AdminUiAutoPasteStage.BeforePaste, "粘贴前", logService);
-        SendKeySequence("Ctrl+V", logService);
-        logService?.LogStage(AdminUiAutoPasteStage.PasteSent, targetWindow);
-        logService?.LogKeyboardDelay("AfterPasteBeforeEnter", PasteBeforeEnterDelayMilliseconds);
-        sleep(PasteBeforeEnterDelay);
-        logService?.LogStage(AdminUiAutoPasteStage.BeforeEnter, targetWindow);
-        EnsureTargetForeground(targetWindow, AdminUiAutoPasteStage.BeforeEnter, "Enter 前", logService);
-        SendKeySequence("Enter", logService);
-        logService?.LogStage(AdminUiAutoPasteStage.EnterSent, targetWindow);
-        logService?.LogStage(AdminUiAutoPasteStage.Completed, targetWindow);
+        ExecuteWithInputBlocked(targetWindow, logService, () =>
+        {
+            EnsureTargetForeground(targetWindow, AdminUiAutoPasteStage.BeforePaste, "粘贴前", logService, CriticalInputFocusMaxAttempts);
+            SendKeySequence("Ctrl+V", logService);
+            logService?.LogStage(AdminUiAutoPasteStage.PasteSent, targetWindow);
+            logService?.LogKeyboardDelay("AfterPasteBeforeEnter", PasteBeforeEnterDelayMilliseconds);
+            sleep(PasteBeforeEnterDelay);
+            logService?.LogStage(AdminUiAutoPasteStage.BeforeEnter, targetWindow);
+            EnsureTargetForeground(targetWindow, AdminUiAutoPasteStage.BeforeEnter, "Enter 前", logService, CriticalInputFocusMaxAttempts);
+            SendKeySequence("Enter", logService);
+            logService?.LogStage(AdminUiAutoPasteStage.EnterSent, targetWindow);
+            logService?.LogStage(AdminUiAutoPasteStage.Completed, targetWindow);
+        });
+    }
+
+    private void ExecuteWithInputBlocked(ForegroundWindowInfo targetWindow, AdminUiAutoPasteLogService? logService, Action action)
+    {
+        var locked = false;
+        try
+        {
+            var lockResult = blockInput(true);
+            locked = lockResult.Success;
+            logService?.LogInputBlock(targetWindow, requestedBlock: true, success: locked, lockResult.NativeErrorCode);
+            if (locked)
+            {
+                action();
+                return;
+            }
+
+            logService?.LogInputProtection(targetWindow, "BlockInput", success: false, lockResult.NativeErrorCode);
+            using var overlay = showOverlay();
+            logService?.LogInputProtection(targetWindow, "Overlay", overlay.IsActive);
+            if (!overlay.IsActive)
+            {
+                throw new InvalidOperationException($"关键输入阶段保护失败，未发送自动粘贴按键。BlockInput nativeErrorCode={lockResult.NativeErrorCode}");
+            }
+
+            action();
+        }
+        finally
+        {
+            if (locked)
+            {
+                var releaseResult = blockInput(false);
+                logService?.LogInputBlock(targetWindow, requestedBlock: false, success: releaseResult.Success, releaseResult.NativeErrorCode);
+            }
+        }
     }
 
     private void EnsureTargetForeground(
         ForegroundWindowInfo targetWindow,
         AdminUiAutoPasteStage stage,
         string failureStageName,
-        AdminUiAutoPasteLogService? logService)
+        AdminUiAutoPasteLogService? logService,
+        int? maxAttemptsOverride = null)
     {
-        logService?.LogKeyboardForeground($"{stage}:BeforeFocus", getForegroundWindowInfo());
         if (targetWindow.Handle == IntPtr.Zero)
         {
             throw new InvalidOperationException($"{failureStageName}无法确认 AdminUI 登录窗口。");
         }
 
-        var focusStopwatch = Stopwatch.StartNew();
-        var focusResult = setForegroundWindow(targetWindow.Handle);
-        focusStopwatch.Stop();
-        logService?.LogKeyboardStep("SetForegroundWindow", "FocusTarget", 1, focusResult ? 1u : 0u, focusStopwatch.ElapsedMilliseconds, Marshal.GetLastWin32Error());
-        sleep(FocusSettleDelay);
+        var totalStopwatch = Stopwatch.StartNew();
+        var maxAttempts = maxAttemptsOverride ?? Math.Max(1, (int)Math.Ceiling(
+            ForceFocusRetryTimeoutMilliseconds / (double)(FocusSettleDelayMilliseconds + ForceFocusRetryIntervalMilliseconds)));
 
-        var actualWindow = getForegroundWindowInfo();
-        logService?.LogKeyboardForeground($"{stage}:AfterFocus", actualWindow);
-        var matched = IsSameForegroundTarget(targetWindow, actualWindow);
-        logService?.LogFocusCheck(stage, targetWindow, actualWindow, matched);
-        if (!matched)
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            logService?.LogStage(AdminUiAutoPasteStage.Aborted, targetWindow, $"{failureStageName}焦点不在目标 AdminUI 登录窗口。");
-            throw new InvalidOperationException($"{failureStageName}焦点不在目标 AdminUI 登录窗口。");
+            logService?.LogKeyboardForeground($"{stage}:BeforeFocus", getForegroundWindowInfo());
+            var focusStopwatch = Stopwatch.StartNew();
+            var focusResult = setForegroundWindow(targetWindow.Handle);
+            focusStopwatch.Stop();
+            logService?.LogKeyboardStep("SetForegroundWindow", "FocusTarget", 1, focusResult ? 1u : 0u, focusStopwatch.ElapsedMilliseconds, Marshal.GetLastWin32Error());
+            logService?.LogFocusRetry(stage, targetWindow, attempt, focusResult);
+            sleep(FocusSettleDelay);
+
+            var actualWindow = getForegroundWindowInfo();
+            logService?.LogKeyboardForeground($"{stage}:AfterFocus", actualWindow);
+            var matched = IsSameForegroundTarget(targetWindow, actualWindow);
+            logService?.LogFocusCheck(stage, targetWindow, actualWindow, matched);
+            if (matched)
+            {
+                totalStopwatch.Stop();
+                logService?.LogFocusRetryResult(stage, targetWindow, success: true, attempt, totalStopwatch.ElapsedMilliseconds);
+                return;
+            }
+
+            if (attempt < maxAttempts)
+            {
+                sleep(ForceFocusRetryInterval);
+            }
         }
+
+        totalStopwatch.Stop();
+        logService?.LogFocusRetryResult(stage, targetWindow, success: false, maxAttempts, totalStopwatch.ElapsedMilliseconds);
+        logService?.LogStage(AdminUiAutoPasteStage.Aborted, targetWindow, $"{failureStageName}无法拉回目标 AdminUI 登录窗口。");
+        var suffix = stage == AdminUiAutoPasteStage.BeforeEnter
+            ? "密码可能已粘贴，请手动确认。"
+            : string.Empty;
+        throw new InvalidOperationException($"{failureStageName}无法拉回目标 AdminUI 登录窗口。{suffix}");
     }
 
     private void SendKeySequence(string shortcut, AdminUiAutoPasteLogService? logService)
@@ -166,6 +239,9 @@ public sealed class KeyboardInputService
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool BlockInput(bool fBlockIt);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);

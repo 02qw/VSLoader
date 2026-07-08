@@ -48,6 +48,11 @@ public sealed class AdminUiAutoPasteLogService
         WriteLine($"[WindowCandidate] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\" titleMatch={titleMatch} processMatch={processMatch} classMatch={classMatch}");
     }
 
+    public void LogWindowMatch(ForegroundWindowInfo window)
+    {
+        WriteLine($"[WindowMatch] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\"");
+    }
+
     public void LogWindowScanEnd(int candidateCount, int matchCount)
     {
         WriteLine($"[WindowScanEnd] candidateCount={candidateCount} matchCount={matchCount}");
@@ -85,6 +90,26 @@ public sealed class AdminUiAutoPasteLogService
         }
 
         WriteLine($"[FocusCheck] stage=\"{stage}\" expectedHandle={targetWindow.Handle} actualHandle={actualWindow.Handle} matched={matched} actualTitle=\"{Escape(actualWindow.Title)}\" actualProcess=\"{Escape(actualWindow.ProcessName)}\" actualClass=\"{Escape(actualWindow.ClassName)}\"");
+    }
+
+    internal void LogFocusRetry(AdminUiAutoPasteStage stage, ForegroundWindowInfo targetWindow, int attempt, bool setForegroundResult)
+    {
+        WriteLine($"[FocusRetry] stage=\"{stage}\" targetHandle={targetWindow.Handle} attempt={attempt} setForegroundResult={setForegroundResult}");
+    }
+
+    internal void LogFocusRetryResult(AdminUiAutoPasteStage stage, ForegroundWindowInfo targetWindow, bool success, int attempts, long elapsedMilliseconds)
+    {
+        WriteLine($"[FocusRetryResult] stage=\"{stage}\" targetHandle={targetWindow.Handle} success={success} attempts={attempts} elapsedMs={elapsedMilliseconds}");
+    }
+
+    internal void LogInputBlock(ForegroundWindowInfo targetWindow, bool requestedBlock, bool success, int nativeErrorCode = 0)
+    {
+        WriteLine($"[InputBlock] targetHandle={targetWindow.Handle} requestedBlock={requestedBlock} success={success} nativeErrorCode={nativeErrorCode}");
+    }
+
+    internal void LogInputProtection(ForegroundWindowInfo targetWindow, string mode, bool success, int nativeErrorCode = 0)
+    {
+        WriteLine($"[InputProtection] targetHandle={targetWindow.Handle} mode=\"{Escape(mode)}\" success={success} nativeErrorCode={nativeErrorCode}");
     }
 
     public void LogKeyboardPlan(ForegroundWindowInfo targetWindow, int focusSettleMilliseconds, int pasteBeforeEnterDelayMilliseconds, int inputStructSize)

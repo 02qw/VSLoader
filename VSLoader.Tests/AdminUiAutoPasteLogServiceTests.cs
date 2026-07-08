@@ -121,6 +121,59 @@ public sealed class AdminUiAutoPasteLogServiceTests : IDisposable
     }
 
     [Fact]
+    public void LogFocusRetry_writes_retry_stage_attempt_and_result()
+    {
+        var service = new AdminUiAutoPasteLogService(rootPath);
+        var target = new ForegroundWindowInfo
+        {
+            Handle = new IntPtr(123),
+            Title = "TAOI008.processor",
+            ProcessName = "javaw",
+            ClassName = "SunAwtDialog"
+        };
+
+        service.LogFocusRetry(AdminUiAutoPasteStage.BeforePaste, target, attempt: 2, setForegroundResult: true);
+        service.LogFocusRetryResult(AdminUiAutoPasteStage.BeforePaste, target, success: true, attempts: 2, elapsedMilliseconds: 240);
+
+        var log = ReadOnlyLogFile();
+        Assert.Contains("[FocusRetry]", log);
+        Assert.Contains("stage=\"BeforePaste\"", log);
+        Assert.Contains("targetHandle=123", log);
+        Assert.Contains("attempt=2", log);
+        Assert.Contains("setForegroundResult=True", log);
+        Assert.Contains("[FocusRetryResult]", log);
+        Assert.Contains("success=True", log);
+        Assert.Contains("attempts=2", log);
+        Assert.Contains("elapsedMs=240", log);
+    }
+
+    [Fact]
+    public void LogInputProtection_writes_mode_result_and_native_error_without_sensitive_text()
+    {
+        var service = new AdminUiAutoPasteLogService(rootPath);
+
+        service.LogInputProtection(
+            new ForegroundWindowInfo
+            {
+                Handle = new IntPtr(123),
+                Title = "TAOI008.processor",
+                ProcessName = "javaw",
+                ClassName = "SunAwtDialog"
+            },
+            "Overlay",
+            success: true,
+            nativeErrorCode: 0);
+
+        var log = ReadOnlyLogFile();
+        Assert.Contains("[InputProtection]", log);
+        Assert.Contains("targetHandle=123", log);
+        Assert.Contains("mode=\"Overlay\"", log);
+        Assert.Contains("success=True", log);
+        Assert.Contains("nativeErrorCode=0", log);
+        Assert.DoesNotContain("password", log, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Writes_single_log_file_and_keeps_latest_2000_lines()
     {
         var service = new AdminUiAutoPasteLogService(rootPath);

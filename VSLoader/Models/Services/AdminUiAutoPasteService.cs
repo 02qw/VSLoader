@@ -83,19 +83,24 @@ public sealed class AdminUiAutoPasteService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var window = FindAdminUiDialogWindow(config) ?? getForegroundWindowInfo();
-            var match = IsStrictDialogWindow(window)
-                ? EvaluateAdminUiDialogWindow(window, config)
-                : EvaluateAdminUiWindow(window, config);
+            var window = FindAdminUiDialogWindow(config);
+            if (window is null)
+            {
+                logService.LogPoll(null, titleMatch: false, processMatch: false, classMatch: false);
+                await delayAsync(pollInterval, cancellationToken);
+                continue;
+            }
+
+            var match = EvaluateAdminUiDialogWindow(window, config);
             logService.LogPoll(window, match.TitleMatch, match.ProcessMatch, match.ClassMatch);
             if (match.IsMatch)
             {
-                logService.LogSend(window!);
+                logService.LogSend(window);
                 try
                 {
-                    sendPasteAndEnter(window!);
-                    logService.LogSendCompleted(window!);
-                    return AdminUiAutoPasteResult.Ok(window!);
+                    sendPasteAndEnter(window);
+                    logService.LogSendCompleted(window);
+                    return AdminUiAutoPasteResult.Ok(window);
                 }
                 catch (Exception ex)
                 {
@@ -107,7 +112,7 @@ public sealed class AdminUiAutoPasteService
             await delayAsync(pollInterval, cancellationToken);
         }
 
-        const string timeoutMessage = "等待超时，未检测到 AdminUI 前台窗口。";
+        const string timeoutMessage = "等待超时，未检测到 AdminUI 登录窗口。";
         logService.LogTimeout(timeoutMessage);
         return AdminUiAutoPasteResult.Fail(timeoutMessage);
     }
@@ -177,10 +182,10 @@ public sealed class AdminUiAutoPasteService
         foreach (var window in windows)
         {
             var result = EvaluateAdminUiDialogWindow(window, config);
-            logService.LogWindowCandidate(window, result.TitleMatch, result.ProcessMatch, result.ClassMatch);
             if (result.IsMatch)
             {
                 match = window;
+                logService.LogWindowMatch(window);
                 break;
             }
         }
