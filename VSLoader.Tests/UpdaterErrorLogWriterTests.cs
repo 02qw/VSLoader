@@ -27,6 +27,24 @@ public sealed class UpdaterErrorLogWriterTests : IDisposable
         Assert.Contains("boom", content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WriteStartupError_uses_single_log_file_and_keeps_latest_2000_lines()
+    {
+        var writer = new UpdaterErrorLogWriter(_rootPath);
+        var logPath = Path.Combine(_rootPath, "updater-error.log");
+        File.WriteAllLines(logPath, Enumerable.Range(1, 1999).Select(index => $"old-{index:0000}"));
+
+        var writtenPath = writer.WriteStartupError(["--targetDir", "C:\\App"], new InvalidOperationException("boom"));
+
+        Assert.Equal(logPath, writtenPath);
+        Assert.Single(Directory.GetFiles(_rootPath, "*.log"));
+        var lines = File.ReadAllLines(logPath);
+        Assert.Equal(2000, lines.Length);
+        Assert.DoesNotContain(lines, line => line.Contains("old-0001", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("old-1999", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("Source: VSLoader.Updater startup", StringComparison.Ordinal));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))

@@ -58,4 +58,43 @@ public sealed class PathAccessPreflightServiceTests
         Assert.True(result.Success, result.ErrorMessage);
         Assert.False(tcpChecked);
     }
+
+    [Fact]
+    public async Task CheckFileAsync_returns_network_failure_before_file_check_when_unc_host_is_unreachable()
+    {
+        var fileChecked = false;
+        var service = new PathAccessPreflightService(
+            (_, _, _) => Task.FromResult(false),
+            _ => true,
+            _ =>
+            {
+                fileChecked = true;
+                return true;
+            });
+
+        var result = await service.CheckFileAsync(@"\\192.168.15.69\share\manifest.json", TimeSpan.FromMilliseconds(50));
+
+        Assert.False(result.Success);
+        Assert.Contains("网络连接失败", result.ErrorMessage);
+        Assert.False(fileChecked);
+    }
+
+    [Fact]
+    public async Task CheckFileAsync_allows_local_existing_file_without_tcp_probe()
+    {
+        var tcpChecked = false;
+        var service = new PathAccessPreflightService(
+            (_, _, _) =>
+            {
+                tcpChecked = true;
+                return Task.FromResult(false);
+            },
+            _ => false,
+            _ => true);
+
+        var result = await service.CheckFileAsync(@"C:\release\manifest.json", TimeSpan.FromMilliseconds(50));
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(tcpChecked);
+    }
 }

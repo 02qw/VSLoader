@@ -1,0 +1,71 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="ModernTitleBarBackgroundBrush" Color="#F8FAFC" />
+    <SolidColorBrush x:Key="ModernTitleBarBorderBrush" Color="#D6E0EC" />
+    <SolidColorBrush x:Key="ModernTitleBarHoverBrush" Color="#EEF6FF" />
+    <SolidColorBrush x:Key="ModernTitleBarCloseHoverBrush" Color="#FEE2E2" />
+    <SolidColorBrush x:Key="ModernTitleBarCloseHoverTextBrush" Color="#DC2626" />
+    <SolidColorBrush x:Key="ModernWindowOuterBorderBrush" Color="#CBD5E1" />
+    <SolidColorBrush x:Key="ModernWindowOuterBorderActiveBrush" Color="#B8C7DA" />
+    <SolidColorBrush x:Key="ModernWindowSubtleShadowBrush" Color="#220F172A" />
+    <SolidColorBrush x:Key="ModernTitleBarIconBrush" Color="#64748B" />
+    <SolidColorBrush x:Key="ModernTitleBarIconHoverBrush" Color="#334155" />
+    <SolidColorBrush x:Key="ModernTitleBarCloseIconHoverBrush" Color="#DC2626" />
+
+    <Style x:Key="ModernTitleBarButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="44" />
+        <Setter Property="Height" Value="44" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource ModernTitleBarIconBrush}" />
+        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernTitleBarHoverBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource ModernTitleBarIconHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernPrimaryLightBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ModernTitleBarCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernTitleBarButtonStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernTitleBarCloseHoverBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource ModernTitleBarCloseIconHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="#FECACA" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

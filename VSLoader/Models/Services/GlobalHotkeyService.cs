@@ -9,7 +9,8 @@ namespace VSLoader.Services;
 
 public sealed class GlobalHotkeyService : IDisposable
 {
-    private const int HotkeyId = 0x5653;
+    private const int MainHotkeyId = 0x5653;
+    private const int MapHotkeyId = 0x4D50;
     private const int WmHotkey = 0x0312;
     private const int WhMouseLl = 14;
     private const int WmXbuttondown = 0x020B;
@@ -28,11 +29,18 @@ public sealed class GlobalHotkeyService : IDisposable
     private LowLevelMouseProc? _mouseProc;
     private HotkeyConfig? _registeredMouseHotkey;
     private Action? _hotkeyPressed;
+    private Action? _mapHotkeyPressed;
     private bool _registered;
+    private bool _mapRegistered;
 
     public void Initialize(Window window, Action hotkeyPressed)
     {
+        Initialize(window);
         _hotkeyPressed = hotkeyPressed;
+    }
+
+    public void Initialize(Window window)
+    {
         _windowHandle = new WindowInteropHelper(window).Handle;
         _source = HwndSource.FromHwnd(_windowHandle);
         _source?.AddHook(WndProc);
@@ -65,7 +73,7 @@ public sealed class GlobalHotkeyService : IDisposable
 
         var modifiers = GetModifiers(config);
         var virtualKey = KeyInterop.VirtualKeyFromKey(ParseKey(config.Key));
-        if (!RegisterHotKey(_windowHandle, HotkeyId, modifiers, (uint)virtualKey))
+        if (!RegisterHotKey(_windowHandle, MainHotkeyId, modifiers, (uint)virtualKey))
         {
             var error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
             return SaveResult.Fail($"快捷键注册失败，可能已被系统或其他程序占用，请更换快捷键。\n\n错误原因：{error}");
@@ -75,11 +83,43 @@ public sealed class GlobalHotkeyService : IDisposable
         return SaveResult.Ok();
     }
 
+    public SaveResult RegisterMapHotkey(MapHotkeyConfig config, Action hotkeyPressed)
+    {
+        UnregisterMapHotkey();
+        _mapHotkeyPressed = hotkeyPressed;
+
+        if (!config.Enabled)
+        {
+            return SaveResult.Ok();
+        }
+
+        var validation = MapHotkeyService.Validate(config);
+        if (!validation.Success)
+        {
+            return validation;
+        }
+
+        if (_windowHandle == IntPtr.Zero)
+        {
+            return SaveResult.Fail("主窗口尚未初始化，无法注册地图快捷键。");
+        }
+
+        var virtualKey = KeyInterop.VirtualKeyFromKey(MapHotkeyService.ParseKeyOrNone(config.Key));
+        if (!RegisterHotKey(_windowHandle, MapHotkeyId, MapHotkeyService.GetWin32Modifiers(config), (uint)virtualKey))
+        {
+            var error = new Win32Exception(Marshal.GetLastWin32Error()).Message;
+            return SaveResult.Fail($"地图快捷键注册失败，可能已被系统或其他程序占用，请更换快捷键。\n\n错误原因：{error}");
+        }
+
+        _mapRegistered = true;
+        return SaveResult.Ok();
+    }
+
     public void Unregister()
     {
         if (_registered && _windowHandle != IntPtr.Zero)
         {
-            UnregisterHotKey(_windowHandle, HotkeyId);
+            UnregisterHotKey(_windowHandle, MainHotkeyId);
             _registered = false;
         }
 
@@ -88,6 +128,15 @@ public sealed class GlobalHotkeyService : IDisposable
             UnhookWindowsHookEx(_mouseHook);
             _mouseHook = IntPtr.Zero;
             _registeredMouseHotkey = null;
+        }
+    }
+
+    public void UnregisterMapHotkey()
+    {
+        if (_mapRegistered && _windowHandle != IntPtr.Zero)
+        {
+            UnregisterHotKey(_windowHandle, MapHotkeyId);
+            _mapRegistered = false;
         }
     }
 
@@ -173,15 +222,21 @@ public sealed class GlobalHotkeyService : IDisposable
     public void Dispose()
     {
         Unregister();
+        UnregisterMapHotkey();
         _source?.RemoveHook(WndProc);
         _source = null;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WmHotkey && wParam.ToInt32() == HotkeyId)
+        if (msg == WmHotkey && wParam.ToInt32() == MainHotkeyId)
         {
             _hotkeyPressed?.Invoke();
+            handled = true;
+        }
+        else if (msg == WmHotkey && wParam.ToInt32() == MapHotkeyId)
+        {
+            _mapHotkeyPressed?.Invoke();
             handled = true;
         }
 

@@ -1,0 +1,240 @@
+<style>
+  .direction-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .direction-card {
+    border: 1px solid #d7e0ec;
+    border-radius: 14px;
+    background: #ffffff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  }
+  .direction-card:hover {
+    border-color: #94b7e7;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
+    transform: translateY(-1px);
+  }
+  .direction-card.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12), 0 12px 30px rgba(15, 23, 42, .08);
+  }
+  .mini-app {
+    background: #f6f9ff;
+    padding: 14px;
+    border-bottom: 1px solid #e8eef6;
+    min-height: 265px;
+  }
+  .window {
+    border: 1px solid #cfd8e6;
+    background: #fff;
+    border-radius: 9px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .title {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    background: #fbfdff;
+    border-bottom: 1px solid #e8eef6;
+    color: #172033;
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .dots {
+    color: #94a3b8;
+    letter-spacing: 2px;
+  }
+  .body {
+    padding: 10px;
+  }
+  .line {
+    height: 9px;
+    border-radius: 999px;
+    background: #e8eef6;
+    margin-bottom: 7px;
+  }
+  .line.dark { background: #cbd5e1; }
+  .line.blue { background: #bfdbfe; }
+  .line.green { background: #bbf7d0; }
+  .toolbar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .pill {
+    height: 22px;
+    min-width: 42px;
+    border-radius: 7px;
+    background: #fff;
+    border: 1px solid #d7e0ec;
+  }
+  .pill.primary { background: #2563eb; border-color: #2563eb; }
+  .pill.quiet { background: #fbfdff; border-color: #e3eaf3; }
+  .table {
+    border: 1px solid #e3eaf3;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr .8fr;
+    gap: 8px;
+    padding: 8px;
+    border-bottom: 1px solid #eef2f7;
+  }
+  .row:last-child { border-bottom: 0; }
+  .legacy .window:nth-child(2),
+  .legacy .window:nth-child(3) {
+    background: #f1f3f5;
+    border-color: #bfc5cd;
+  }
+  .legacy .window:nth-child(2) .title,
+  .legacy .window:nth-child(3) .title {
+    background: #e5e7eb;
+    border-color: #cbd5e1;
+  }
+  .families .window:nth-child(2) .title { background: #f8fafc; }
+  .families .window:nth-child(3) .title { background: #f8fafc; }
+  .system .mini-app { background: linear-gradient(180deg, #f6f9ff 0%, #f8fbff 100%); }
+  .system .window {
+    border-color: #dbe5f2;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+  }
+  .card-copy {
+    padding: 14px 15px 16px;
+  }
+  .card-copy h3 {
+    margin: 0 0 8px;
+  }
+  .card-copy p {
+    margin: 0;
+    color: #64748b;
+    line-height: 1.55;
+    font-size: 13px;
+  }
+  .scope-list {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .scope-chip {
+    border: 1px solid #e3eaf3;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+    color: #334155;
+    font-size: 13px;
+  }
+</style>
+
+<h2>VSLoader 其他页面视觉统一：三种推进方式</h2>
+<p class="subtitle">这页只用于讨论方向，不会修改程序代码。你可以点选你更认可的路线。</p>
+
+<div class="direction-grid">
+  <div class="direction-card legacy" data-choice="a" onclick="toggleSelect(this)">
+    <div class="mini-app">
+      <div class="window">
+        <div class="title">主窗口 <span class="dots">● ● ●</span></div>
+        <div class="body">
+          <div class="toolbar"><div class="pill primary"></div><div class="pill"></div><div class="pill"></div></div>
+          <div class="table">
+            <div class="row"><div class="line dark"></div><div class="line"></div><div class="line"></div></div>
+            <div class="row"><div class="line blue"></div><div class="line"></div><div class="line"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="window">
+        <div class="title">设置页 <span class="dots">■ ×</span></div>
+        <div class="body"><div class="line dark"></div><div class="line"></div><div class="line"></div></div>
+      </div>
+      <div class="window">
+        <div class="title">批量导入 <span class="dots">■ ×</span></div>
+        <div class="body"><div class="line dark"></div><div class="line"></div><div class="line"></div></div>
+      </div>
+    </div>
+    <div class="card-copy">
+      <h3>A. 只统一外壳</h3>
+      <p>只把标题栏、窗口边框、按钮样式统一。风险最低，但页面内部仍然可能各有各的味道，成熟感提升有限。</p>
+    </div>
+  </div>
+
+  <div class="direction-card families" data-choice="b" onclick="toggleSelect(this)">
+    <div class="mini-app">
+      <div class="window">
+        <div class="title">主窗口 <span class="dots">● ● ●</span></div>
+        <div class="body">
+          <div class="toolbar"><div class="pill primary"></div><div class="pill"></div><div class="pill quiet"></div></div>
+          <div class="table">
+            <div class="row"><div class="line dark"></div><div class="line"></div><div class="line"></div></div>
+            <div class="row"><div class="line blue"></div><div class="line"></div><div class="line"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="window">
+        <div class="title">配置类页面 <span class="dots">● ● ●</span></div>
+        <div class="body"><div class="line dark"></div><div class="line"></div><div class="line green"></div></div>
+      </div>
+      <div class="window">
+        <div class="title">任务类页面 <span class="dots">● ● ●</span></div>
+        <div class="body"><div class="toolbar"><div class="pill primary"></div><div class="pill quiet"></div></div><div class="line"></div></div>
+      </div>
+    </div>
+    <div class="card-copy">
+      <h3>B. 按页面族统一</h3>
+      <p>设置/工作区归为配置类，批量导入/更新器归为任务类，地图归为画布类。效率高，稳定，适合一次收一大轮。</p>
+    </div>
+  </div>
+
+  <div class="direction-card system" data-choice="c" onclick="toggleSelect(this)">
+    <div class="mini-app">
+      <div class="window">
+        <div class="title">VSLoader Design System <span class="dots">● ● ●</span></div>
+        <div class="body">
+          <div class="toolbar"><div class="pill primary"></div><div class="pill"></div><div class="pill quiet"></div></div>
+          <div class="table">
+            <div class="row"><div class="line dark"></div><div class="line"></div><div class="line"></div></div>
+            <div class="row"><div class="line blue"></div><div class="line"></div><div class="line"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="window">
+        <div class="title">所有窗口共享控件语言 <span class="dots">● ● ●</span></div>
+        <div class="body"><div class="line dark"></div><div class="line"></div><div class="line"></div><div class="line green"></div></div>
+      </div>
+      <div class="window">
+        <div class="title">弹窗 / 遮罩 / 进度 <span class="dots">● ● ●</span></div>
+        <div class="body"><div class="toolbar"><div class="pill primary"></div><div class="pill quiet"></div></div><div class="line"></div></div>
+      </div>
+    </div>
+    <div class="card-copy">
+      <h3>C. 完整视觉系统收口</h3>
+      <p>把颜色、按钮、输入框、表格、弹窗、窗口外壳、任务进度统一成一套系统。最成熟，但改动最大，需要测试护栏更严。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>建议纳入这次“一次搞定”的页面范围</h3>
+  <div class="scope-list">
+    <div class="scope-chip">设置窗口</div>
+    <div class="scope-chip">工作区选择</div>
+    <div class="scope-chip">工作区命名/重命名弹窗</div>
+    <div class="scope-chip">新增/编辑快捷项</div>
+    <div class="scope-chip">批量新增识别</div>
+    <div class="scope-chip">消息确认弹窗</div>
+    <div class="scope-chip">更新器窗口</div>
+    <div class="scope-chip">更新完成确认弹窗</div>
+    <div class="scope-chip">工厂地图外壳和工具条</div>
+    <div class="scope-chip">进度遮罩/Busy 面板</div>
+    <div class="scope-chip">ContextMenu 右键菜单</div>
+    <div class="scope-chip">通用输入/滚动区域</div>
+  </div>
+</div>

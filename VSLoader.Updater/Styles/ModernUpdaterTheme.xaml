@@ -1,0 +1,144 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="ModernAppBackgroundBrush" Color="#F6F9FF" />
+    <SolidColorBrush x:Key="ModernSurfaceBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ModernElevatedSurfaceBrush" Color="#FBFDFF" />
+    <SolidColorBrush x:Key="ModernSurfaceBorderBrush" Color="#E3EAF3" />
+    <SolidColorBrush x:Key="ModernWindowOuterBorderBrush" Color="#C8D3E1" />
+    <SolidColorBrush x:Key="ModernPrimaryTextBrush" Color="#172033" />
+    <SolidColorBrush x:Key="ModernBodyTextBrush" Color="#334155" />
+    <SolidColorBrush x:Key="ModernSecondaryTextBrush" Color="#64748B" />
+    <SolidColorBrush x:Key="ModernWeakTextBrush" Color="#94A3B8" />
+    <SolidColorBrush x:Key="ModernButtonBorderBrush" Color="#D7E0EC" />
+    <SolidColorBrush x:Key="ModernButtonHoverBrush" Color="#F4F8FF" />
+    <SolidColorBrush x:Key="ModernPrimaryBrush" Color="#2563EB" />
+    <SolidColorBrush x:Key="ModernPrimaryHoverBrush" Color="#1D4ED8" />
+
+    <Style x:Key="ModernButtonStyle" TargetType="Button">
+        <Setter Property="Height" Value="34" />
+        <Setter Property="MinWidth" Value="80" />
+        <Setter Property="Padding" Value="14,0" />
+        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource ModernPrimaryTextBrush}" />
+        <Setter Property="Background" Value="{StaticResource ModernSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource ModernButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernButtonHoverBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#B8D4FF" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Setter Property="Foreground" Value="{StaticResource ModernWeakTextBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ModernPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Background" Value="{StaticResource ModernPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource ModernPrimaryBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernPrimaryHoverBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernPrimaryHoverBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ModernDialogPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernPrimaryButtonStyle}">
+        <Setter Property="MinWidth" Value="96" />
+    </Style>
+
+    <Style x:Key="ModernDialogSecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+        <Setter Property="MinWidth" Value="96" />
+    </Style>
+
+    <Style x:Key="ModernSurfaceBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource ModernSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource ModernSurfaceBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style x:Key="ModernDialogSurfaceStyle" TargetType="Border" BasedOn="{StaticResource ModernSurfaceBorderStyle}">
+        <Setter Property="BorderBrush" Value="{StaticResource ModernWindowOuterBorderBrush}" />
+        <Setter Property="CornerRadius" Value="10" />
+    </Style>
+
+    <Style x:Key="ModernProgressBarStyle" TargetType="ProgressBar">
+        <Setter Property="Height" Value="10" />
+        <Setter Property="Foreground" Value="{StaticResource ModernPrimaryBrush}" />
+        <Setter Property="Background" Value="#E8EEF6" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <Style x:Key="ModernLogListBoxStyle" TargetType="ListBox">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontFamily" Value="Consolas, Microsoft YaHei UI" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource ModernBodyTextBrush}" />
+    </Style>
+
+    <Style x:Key="ModernGroupBoxStyle" TargetType="GroupBox">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource ModernPrimaryTextBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GroupBox">
+                    <Border Background="{StaticResource ModernSurfaceBrush}"
+                            BorderBrush="{StaticResource ModernSurfaceBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="12">
+                        <StackPanel>
+                            <ContentPresenter ContentSource="Header"
+                                              Margin="0,0,0,8"
+                                              TextElement.FontSize="13"
+                                              TextElement.FontWeight="SemiBold"
+                                              TextElement.Foreground="{StaticResource ModernPrimaryTextBrush}" />
+                            <ContentPresenter />
+                        </StackPanel>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

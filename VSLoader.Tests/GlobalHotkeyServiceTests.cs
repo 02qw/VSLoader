@@ -59,6 +59,19 @@ public sealed class GlobalHotkeyServiceTests
         Assert.True(altMouse5Result.Success, altMouse5Result.ErrorMessage);
     }
 
+    [Fact]
+    public void Source_exposes_separate_map_hotkey_registration()
+    {
+        var code = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
+            "VSLoader",
+            "Models",
+            "Services",
+            "GlobalHotkeyService.cs"));
+
+        Assert.Contains("RegisterMapHotkey", code);
+        Assert.Contains("MapHotkeyId", code);
+    }
+
     private static HotkeyConfig CreateKeyboardHotkey(bool ctrl, bool alt, bool shift, string key)
     {
         return new HotkeyConfig

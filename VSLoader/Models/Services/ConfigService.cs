@@ -69,6 +69,7 @@ public sealed class ConfigService
             config.Shortcuts ??= new List<ShortcutItem>();
             config.AdminUi ??= new AdminUiConfig();
             config.Hotkey ??= new HotkeyConfig();
+            config.MapHotkey ??= new MapHotkeyConfig();
             config.BatchImport ??= new BatchImportConfig();
             config.WebUi ??= new WebUiConfig();
             config.UpdateCheck ??= new UpdateCheckConfig();
@@ -123,10 +124,13 @@ public sealed class ConfigService
         config.VSCodePath ??= string.Empty;
         config.AdminUi ??= new AdminUiConfig();
         config.Hotkey ??= new HotkeyConfig();
+        config.MapHotkey ??= new MapHotkeyConfig();
         config.BatchImport ??= new BatchImportConfig();
         config.WebUi ??= new WebUiConfig();
         config.UpdateCheck ??= new UpdateCheckConfig();
         config.Shortcuts ??= new List<ShortcutItem>();
+        NormalizeAdminUiAutoPasteConfig(config.AdminUi);
+        NormalizeMapHotkeyConfig(config.MapHotkey);
 
         foreach (var shortcut in config.Shortcuts)
         {
@@ -135,5 +139,68 @@ public sealed class ConfigService
             shortcut.Description ??= string.Empty;
             shortcut.SourceModuleName ??= string.Empty;
         }
+    }
+
+    private static void NormalizeAdminUiAutoPasteConfig(AdminUiConfig adminUi)
+    {
+        var titleKeyword = adminUi.AutoPasteWindowTitleKeyword?.Trim();
+        if (string.IsNullOrWhiteSpace(titleKeyword)
+            || string.Equals(titleKeyword, "znt client", StringComparison.OrdinalIgnoreCase))
+        {
+            adminUi.AutoPasteWindowTitleKeyword = "processor";
+        }
+        else
+        {
+            adminUi.AutoPasteWindowTitleKeyword = titleKeyword;
+        }
+
+        var processNames = adminUi.AutoPasteProcessNames?.Trim();
+        adminUi.AutoPasteProcessNames = string.IsNullOrWhiteSpace(processNames)
+            ? "java;javaw;javaws"
+            : processNames;
+
+        adminUi.AutoPasteTimeoutSeconds = Math.Clamp(adminUi.AutoPasteTimeoutSeconds, 1, 60);
+        if (adminUi.AutoPasteInitialDelayMilliseconds is 2500 or 800 or 200 or 100)
+        {
+            adminUi.AutoPasteInitialDelayMilliseconds = 0;
+        }
+
+        if (adminUi.AutoPastePollIntervalMilliseconds is 300 or 150)
+        {
+            adminUi.AutoPastePollIntervalMilliseconds = 50;
+        }
+
+        adminUi.AutoPasteInitialDelayMilliseconds = Math.Clamp(adminUi.AutoPasteInitialDelayMilliseconds, 0, 30000);
+        adminUi.AutoPastePollIntervalMilliseconds = Math.Clamp(adminUi.AutoPastePollIntervalMilliseconds, 50, 2000);
+    }
+
+    private static void NormalizeMapHotkeyConfig(MapHotkeyConfig mapHotkey)
+    {
+        mapHotkey.Key = mapHotkey.Key?.Trim() ?? string.Empty;
+        if (!mapHotkey.Enabled)
+        {
+            return;
+        }
+
+        if (string.Equals(mapHotkey.Key, "M", StringComparison.OrdinalIgnoreCase))
+        {
+            mapHotkey.Ctrl = false;
+            mapHotkey.Alt = true;
+            mapHotkey.Shift = false;
+            mapHotkey.Key = "X";
+            return;
+        }
+
+        if (mapHotkey.Ctrl || mapHotkey.Alt || mapHotkey.Shift)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(mapHotkey.Key))
+        {
+            mapHotkey.Key = "X";
+        }
+
+        mapHotkey.Alt = true;
     }
 }

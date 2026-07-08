@@ -58,32 +58,47 @@ public sealed class SettingsViewModelWebUiTests : IDisposable
     {
         var updateCheckConfig = new UpdateCheckConfig
         {
+            GlobalConfigPackagePath = @"C:\global-config.json",
             RulesFilePath = @"C:\rules.csv",
             MapFilePath = @"C:\map.json",
             SoftwareVersionFilePath = @"C:\version.txt"
         };
 
         var viewModel = CreateViewModel(new WebUiConfig(), updateCheckConfig);
-        viewModel.UpdateCheck.RulesFilePath = @"D:\changed.csv";
+        viewModel.UpdateCheck.GlobalConfigPackagePath = @"D:\changed.json";
 
+        Assert.Equal(@"C:\global-config.json", updateCheckConfig.GlobalConfigPackagePath);
+        Assert.Equal(@"D:\changed.json", viewModel.UpdateCheck.GlobalConfigPackagePath);
         Assert.Equal(@"C:\rules.csv", updateCheckConfig.RulesFilePath);
-        Assert.Equal(@"D:\changed.csv", viewModel.UpdateCheck.RulesFilePath);
     }
 
     [Fact]
-    public void Save_trims_active_update_check_paths_and_ignores_legacy_software_version_path()
+    public void Save_trims_global_config_package_path_and_keeps_legacy_paths_untouched()
     {
         var viewModel = CreateViewModel(new WebUiConfig());
-        viewModel.UpdateCheck.RulesFilePath = "  ";
+        viewModel.UpdateCheck.GlobalConfigPackagePath = "  C:\\global-config.json  ";
+        viewModel.UpdateCheck.RulesFilePath = "  C:\\rules.csv  ";
         viewModel.UpdateCheck.MapFilePath = "  C:\\map.json  ";
         viewModel.UpdateCheck.SoftwareVersionFilePath = "  C:\\version.txt  ";
 
         viewModel.SaveCommand.Execute(null);
 
         Assert.True(viewModel.Saved);
-        Assert.Equal(string.Empty, viewModel.UpdateCheck.RulesFilePath);
-        Assert.Equal(@"C:\map.json", viewModel.UpdateCheck.MapFilePath);
+        Assert.Equal(@"C:\global-config.json", viewModel.UpdateCheck.GlobalConfigPackagePath);
+        Assert.Equal("  C:\\rules.csv  ", viewModel.UpdateCheck.RulesFilePath);
+        Assert.Equal("  C:\\map.json  ", viewModel.UpdateCheck.MapFilePath);
         Assert.Equal("  C:\\version.txt  ", viewModel.UpdateCheck.SoftwareVersionFilePath);
+    }
+
+    [Fact]
+    public void BrowseGlobalConfigPackage_sets_global_config_package_path()
+    {
+        var dialogService = new RecordingDialogService { SelectedJsonFile = @"C:\global-config.json" };
+        var viewModel = CreateViewModel(new WebUiConfig(), dialogService: dialogService);
+
+        viewModel.BrowseGlobalConfigPackageCommand.Execute(null);
+
+        Assert.Equal(@"C:\global-config.json", viewModel.UpdateCheck.GlobalConfigPackagePath);
     }
 
     [Fact]
@@ -112,7 +127,10 @@ public sealed class SettingsViewModelWebUiTests : IDisposable
         }
     }
 
-    private SettingsViewModel CreateViewModel(WebUiConfig webUiConfig, UpdateCheckConfig? updateCheckConfig = null)
+    private SettingsViewModel CreateViewModel(
+        WebUiConfig webUiConfig,
+        UpdateCheckConfig? updateCheckConfig = null,
+        DialogService? dialogService = null)
     {
         return new SettingsViewModel(
             _validExePath,
@@ -121,8 +139,19 @@ public sealed class SettingsViewModelWebUiTests : IDisposable
             webUiConfig,
             updateCheckConfig ?? new UpdateCheckConfig(),
             new HotkeyConfig(),
-            new DialogService(),
+            new MapHotkeyConfig(),
+            dialogService ?? new DialogService(),
             new PasswordProtectionService(),
-            _ => SaveResult.Ok());
+            (_, _) => SaveResult.Ok());
+    }
+
+    private sealed class RecordingDialogService : DialogService
+    {
+        public string? SelectedJsonFile { get; set; }
+
+        public override string? SelectJsonFile()
+        {
+            return SelectedJsonFile;
+        }
     }
 }

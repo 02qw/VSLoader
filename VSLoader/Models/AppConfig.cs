@@ -10,6 +10,8 @@ public sealed class AppConfig
 
     public HotkeyConfig Hotkey { get; set; } = new();
 
+    public MapHotkeyConfig MapHotkey { get; set; } = new();
+
     public BatchImportConfig BatchImport { get; set; } = new();
 
     public WebUiConfig WebUi { get; set; } = new();

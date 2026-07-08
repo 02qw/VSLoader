@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using VSLoader.Services;
 using VSLoader.ViewModels;
 using WpfBrushes = System.Windows.Media.Brushes;
 using WpfColor = System.Windows.Media.Color;
@@ -12,6 +13,8 @@ namespace VSLoader.Views;
 
 public partial class WorkspaceSelectorWindow : Window
 {
+    private readonly DialogService dialogService = new();
+
     public WorkspaceSelectorWindow(WorkspaceSelectorViewModel viewModel)
     {
         InitializeComponent();
@@ -26,7 +29,7 @@ public partial class WorkspaceSelectorWindow : Window
         viewModel.RequestDeleteWorkspace += ShowDeleteWorkspaceConfirmation;
         viewModel.ShowErrorRequested += message =>
         {
-            System.Windows.MessageBox.Show(this, message, "VSLoader", MessageBoxButton.OK, MessageBoxImage.Warning);
+            dialogService.ShowError(message);
         };
     }
 
@@ -76,9 +79,16 @@ public partial class WorkspaceSelectorWindow : Window
             Padding = new Thickness(0),
             Background = WpfBrushes.White,
             BorderBrush = new WpfSolidColorBrush(WpfColor.FromRgb(209, 213, 219)),
-            BorderThickness = new Thickness(1),
-            Template = CreateCompactContextMenuTemplate()
+            BorderThickness = new Thickness(1)
         };
+        if (System.Windows.Application.Current.TryFindResource("ModernContextMenuStyle") is Style menuStyle)
+        {
+            menu.Style = menuStyle;
+        }
+        else
+        {
+            menu.Template = CreateCompactContextMenuTemplate();
+        }
 
         menu.Items.Add(CreateWorkspaceMenuItem("打开", viewModel.OpenSelectedWorkspaceCommand));
         menu.Items.Add(CreateWorkspaceMenuItem("重命名", viewModel.StartRenameWorkspaceCommand));
@@ -97,9 +107,17 @@ public partial class WorkspaceSelectorWindow : Window
             Padding = new Thickness(14, 8, 14, 8),
             Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(17, 24, 39)),
             Background = WpfBrushes.Transparent,
-            IsEnabled = command.CanExecute(null),
-            Template = CreateCompactMenuItemTemplate()
+            IsEnabled = command.CanExecute(null)
         };
+        if (System.Windows.Application.Current.TryFindResource(
+                header == "删除" ? "ModernDangerMenuItemStyle" : "ModernMenuItemStyle") is Style menuItemStyle)
+        {
+            item.Style = menuItemStyle;
+        }
+        else
+        {
+            item.Template = CreateCompactMenuItemTemplate();
+        }
 
         item.Click += (_, _) =>
         {
@@ -186,7 +204,7 @@ public partial class WorkspaceSelectorWindow : Window
         var result = viewModel.CreateWorkspace(nameViewModel.WorkspaceName);
         if (!result.Success)
         {
-            System.Windows.MessageBox.Show(this, result.ErrorMessage ?? "新建工作区失败。", "VSLoader", MessageBoxButton.OK, MessageBoxImage.Warning);
+            dialogService.ShowError(result.ErrorMessage ?? "新建工作区失败。");
         }
     }
 
@@ -211,7 +229,7 @@ public partial class WorkspaceSelectorWindow : Window
         var result = viewModel.RenameSelectedWorkspace(nameViewModel.WorkspaceName);
         if (!result.Success)
         {
-            System.Windows.MessageBox.Show(this, result.ErrorMessage ?? "重命名工作区失败。", "VSLoader", MessageBoxButton.OK, MessageBoxImage.Warning);
+            dialogService.ShowError(result.ErrorMessage ?? "重命名工作区失败。");
         }
     }
 
@@ -224,14 +242,7 @@ public partial class WorkspaceSelectorWindow : Window
 
         var workspaceName = viewModel.SelectedWorkspace.Name;
         var message = $"确定要彻底删除工作区“{workspaceName}”吗？\n\n该操作会删除此工作区下的全部配置、快捷项、地图、下载文件，且不可恢复。";
-        var confirmation = System.Windows.MessageBox.Show(
-            this,
-            message,
-            "删除工作区",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (confirmation != MessageBoxResult.Yes)
+        if (!dialogService.Confirm(message))
         {
             return;
         }
@@ -239,7 +250,7 @@ public partial class WorkspaceSelectorWindow : Window
         var result = viewModel.DeleteSelectedWorkspace();
         if (!result.Success)
         {
-            System.Windows.MessageBox.Show(this, result.ErrorMessage ?? "删除工作区失败。", "VSLoader", MessageBoxButton.OK, MessageBoxImage.Warning);
+            dialogService.ShowError(result.ErrorMessage ?? "删除工作区失败。");
         }
     }
 }

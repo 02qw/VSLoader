@@ -38,6 +38,7 @@ public sealed class ConfigServiceWebUiTests : IDisposable
 
         Assert.True(result.Success, result.ErrorMessage);
         Assert.NotNull(result.Config.UpdateCheck);
+        Assert.Equal(string.Empty, result.Config.UpdateCheck.GlobalConfigPackagePath);
         Assert.Equal(string.Empty, result.Config.UpdateCheck.RulesFilePath);
         Assert.Equal(string.Empty, result.Config.UpdateCheck.MapFilePath);
         Assert.Equal(string.Empty, result.Config.UpdateCheck.SoftwareVersionFilePath);

@@ -11,7 +11,10 @@
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     </Window.Resources>
 
-    <Grid Margin="18">
+    <Border Margin="18"
+            Padding="18"
+            Style="{StaticResource ModernDialogSurfaceStyle}">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -23,36 +26,37 @@
                    FontFamily="Microsoft YaHei UI"
                    FontSize="18"
                    FontWeight="SemiBold"
-                   Foreground="#111827"
+                   Foreground="{StaticResource ModernPrimaryTextBrush}"
                    Text="{Binding TitleText}" />
 
         <TextBlock Grid.Row="1"
                    Margin="0,10,0,14"
                    FontFamily="Microsoft YaHei UI"
                    FontSize="13"
-                   Foreground="#374151"
+                   Foreground="{StaticResource ModernBodyTextBrush}"
                    Text="{Binding MessageText}"
                    TextWrapping="Wrap" />
 
         <GroupBox Grid.Row="2"
-                  Padding="10"
+                  Style="{StaticResource ModernGroupBoxStyle}"
                   Header="本次更新内容"
                   Visibility="{Binding ShowReleaseNotes, Converter={StaticResource BooleanToVisibilityConverter}}">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <TextBlock FontFamily="Microsoft YaHei UI"
                            FontSize="12"
-                           Foreground="#374151"
+                           Foreground="{StaticResource ModernBodyTextBrush}"
                            Text="{Binding ReleaseNotesText}"
                            TextWrapping="Wrap" />
             </ScrollViewer>
         </GroupBox>
 
         <Button Grid.Row="3"
+                Style="{StaticResource ModernDialogPrimaryButtonStyle}"
                 Width="88"
-                Height="32"
                 Margin="0,16,0,0"
                 HorizontalAlignment="Right"
                 Click="ConfirmButton_Click"
                 Content="确认" />
     </Grid>
+    </Border>
 </Window>

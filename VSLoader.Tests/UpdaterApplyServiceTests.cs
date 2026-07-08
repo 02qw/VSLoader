@@ -99,7 +99,32 @@ public sealed class UpdaterApplyServiceTests : IDisposable
         Assert.False(result.Success);
         Assert.True(result.RollbackSucceeded);
         Assert.Equal("old", File.ReadAllText(Path.Combine(_targetDir, "VSLoader.exe")));
-        Assert.Contains(Directory.GetFiles(_errorLogRoot), path => Path.GetFileName(path).EndsWith(".log", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(Path.Combine(_errorLogRoot, "updater-error.log"), result.ErrorLogPath);
+        Assert.True(File.Exists(result.ErrorLogPath));
+    }
+
+    [Fact]
+    public void Apply_error_log_uses_single_file_and_keeps_latest_2000_lines()
+    {
+        Directory.CreateDirectory(_errorLogRoot);
+        var logPath = Path.Combine(_errorLogRoot, "updater-error.log");
+        File.WriteAllLines(logPath, Enumerable.Range(1, 1999).Select(index => $"old-{index:0000}"));
+        File.WriteAllText(Path.Combine(_targetDir, "VSLoader.exe"), "old");
+        File.WriteAllText(Path.Combine(_stagingDir, "fail.dll"), "boom");
+        var service = new UpdaterApplyService(
+            errorLogRoot: _errorLogRoot,
+            shouldFailCopy: path => Path.GetFileName(path).Equals("fail.dll", StringComparison.OrdinalIgnoreCase));
+
+        var result = service.Apply(CreateOptions());
+
+        Assert.False(result.Success);
+        Assert.Equal(logPath, result.ErrorLogPath);
+        Assert.Single(Directory.GetFiles(_errorLogRoot, "*.log"));
+        var lines = File.ReadAllLines(logPath);
+        Assert.Equal(2000, lines.Length);
+        Assert.DoesNotContain(lines, line => line.Contains("old-0001", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("old-1999", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("Step:", StringComparison.Ordinal));
     }
 
     [Fact]

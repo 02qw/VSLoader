@@ -6,10 +6,47 @@ namespace VSLoader.Services;
 
 public sealed class WebUiService
 {
+    private readonly PathAccessPreflightService pathAccessPreflightService;
+
+    public WebUiService()
+        : this(new PathAccessPreflightService())
+    {
+    }
+
+    public WebUiService(PathAccessPreflightService pathAccessPreflightService)
+    {
+        this.pathAccessPreflightService = pathAccessPreflightService;
+    }
+
     public LaunchResult OpenWebUi(ShortcutItem shortcut, WebUiConfig config)
     {
         try
         {
+            var url = BuildWebUiUrl(shortcut, config);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+
+            return LaunchResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            return LaunchResult.Fail(ex.Message);
+        }
+    }
+
+    public async Task<LaunchResult> OpenWebUiAsync(ShortcutItem shortcut, WebUiConfig config)
+    {
+        try
+        {
+            var preflight = await PreflightShortcutTargetAsync(shortcut.TargetPath);
+            if (!preflight.Success)
+            {
+                return LaunchResult.Fail(preflight.ErrorMessage ?? $"目标路径不存在或不可访问：{shortcut.TargetPath}");
+            }
+
             var url = BuildWebUiUrl(shortcut, config);
             Process.Start(new ProcessStartInfo
             {
@@ -107,5 +144,17 @@ public sealed class WebUiService
     {
         var baseUrl = config.BaseUrl.TrimEnd('/');
         return $"{baseUrl}:{Uri.EscapeDataString(port)}/{Uri.EscapeDataString(instanceName)}/ui";
+    }
+
+    private async Task<PathAccessPreflightResult> PreflightShortcutTargetAsync(string targetPath)
+    {
+        if (VSCodeLauncherService.IsNetworkPath(targetPath))
+        {
+            return await pathAccessPreflightService.CheckDirectoryAsync(targetPath);
+        }
+
+        return Directory.Exists(targetPath)
+            ? PathAccessPreflightResult.Ok()
+            : PathAccessPreflightResult.Fail($"目标路径不存在或不可访问：{targetPath}");
     }
 }

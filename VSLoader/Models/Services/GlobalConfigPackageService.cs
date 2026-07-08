@@ -121,7 +121,7 @@ public sealed class GlobalConfigPackageService
 
     public static string BuildDefaultExportFileName(DateTime now)
     {
-        return $"VSLoader_GlobalConfig_{now:yyyyMMdd_HHmmss}.json";
+        return "VSLoader_GlobalConfig.json";
     }
 
     private GlobalConfigPackage ReadPackage(string packagePath)
@@ -262,9 +262,6 @@ public sealed class GlobalConfigPackageService
             result.Warnings.Add($"批量识别 CSV 文件不存在：{config.BatchImport.LastCsvPath}");
         }
 
-        AddFileWarning(config.UpdateCheck.RulesFilePath, "UpdateCheck rules 文件不存在", result.Warnings);
-        AddFileWarning(config.UpdateCheck.MapFilePath, "UpdateCheck map 文件不存在", result.Warnings);
-
         var missingShortcutCount = config.Shortcuts.Count(shortcut =>
             !string.IsNullOrWhiteSpace(shortcut.TargetPath) && !Directory.Exists(shortcut.TargetPath));
         if (missingShortcutCount > 0)
@@ -338,6 +335,7 @@ public sealed class GlobalConfigPackageService
             Shortcuts = config.Shortcuts.Select(shortcut => shortcut.Clone()).ToList(),
             AdminUi = config.AdminUi.Clone(),
             Hotkey = config.Hotkey.Clone(),
+            MapHotkey = config.MapHotkey.Clone(),
             BatchImport = config.BatchImport.Clone(),
             WebUi = config.WebUi.Clone(),
             UpdateCheck = config.UpdateCheck.Clone()
@@ -349,10 +347,12 @@ public sealed class GlobalConfigPackageService
         config.Shortcuts ??= [];
         config.AdminUi ??= new AdminUiConfig();
         config.Hotkey ??= new HotkeyConfig();
+        config.MapHotkey ??= new MapHotkeyConfig();
         config.BatchImport ??= new BatchImportConfig();
         config.WebUi ??= new WebUiConfig();
         config.UpdateCheck ??= new UpdateCheckConfig();
         config.VSCodePath ??= string.Empty;
+        NormalizeMapHotkeyConfig(config.MapHotkey);
 
         foreach (var shortcut in config.Shortcuts)
         {
@@ -361,6 +361,36 @@ public sealed class GlobalConfigPackageService
             shortcut.Description ??= string.Empty;
             shortcut.SourceModuleName ??= string.Empty;
         }
+    }
+
+    private static void NormalizeMapHotkeyConfig(MapHotkeyConfig mapHotkey)
+    {
+        mapHotkey.Key = mapHotkey.Key?.Trim() ?? string.Empty;
+        if (!mapHotkey.Enabled)
+        {
+            return;
+        }
+
+        if (string.Equals(mapHotkey.Key, "M", StringComparison.OrdinalIgnoreCase))
+        {
+            mapHotkey.Ctrl = false;
+            mapHotkey.Alt = true;
+            mapHotkey.Shift = false;
+            mapHotkey.Key = "X";
+            return;
+        }
+
+        if (mapHotkey.Ctrl || mapHotkey.Alt || mapHotkey.Shift)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(mapHotkey.Key))
+        {
+            mapHotkey.Key = "X";
+        }
+
+        mapHotkey.Alt = true;
     }
 
     private static void NormalizeFactoryMapLayout(FactoryMapLayoutConfig layout)

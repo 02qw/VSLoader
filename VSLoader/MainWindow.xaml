@@ -1,6 +1,9 @@
 <Window x:Class="VSLoader.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:chromeControls="clr-namespace:VSLoader.Views.Controls"
+        xmlns:behaviors="clr-namespace:VSLoader.Behaviors"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:VSLoader.ViewModels"
@@ -11,21 +14,43 @@
         MinHeight="560"
         Width="960"
         MinWidth="900"
+        WindowStyle="None"
         Cursor="{Binding IsBusy, Converter={StaticResource BusyCursorConverter}}">
 
-    <Grid>
-        <DockPanel Background="#F6F7F9"
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="44"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border Background="{StaticResource ModernAppBackgroundBrush}"
+            BorderBrush="{StaticResource ModernWindowOuterBorderBrush}"
+            BorderThickness="1"
+            SnapsToDevicePixels="True">
+    <Grid x:Name="MainFocusTarget"
+          Focusable="True">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <chromeControls:ModernTitleBar Grid.Row="0" />
+        <Grid Grid.Row="1">
+        <DockPanel Background="{StaticResource ModernAppBackgroundBrush}"
                    IsEnabled="{Binding IsNotBusy}">
             <Border DockPanel.Dock="Top"
                     Margin="16,16,16,0"
                     Padding="12"
-                    Background="#FFF4D6"
-                    BorderBrush="#E7C160"
+                    Background="#FFF7D6"
+                    BorderBrush="#E5B84A"
                     BorderThickness="1"
-                    CornerRadius="6"
+                    CornerRadius="8"
                     Visibility="{Binding HasStatusMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Text="{Binding StatusMessage}"
-                           Foreground="#5E4700"
+                           FontFamily="Microsoft YaHei UI"
+                           FontSize="13"
+                           Foreground="#6B4E00"
                            TextWrapping="Wrap" />
             </Border>
 
@@ -35,7 +60,7 @@
                     Background="#FFF7D6"
                     BorderBrush="#E5B84A"
                     BorderThickness="1"
-                    CornerRadius="6"
+                    CornerRadius="8"
                     Visibility="{Binding HasUpdateNotice, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -48,15 +73,10 @@
                                Text="{Binding UpdateNoticeMessage}"
                                TextWrapping="Wrap" />
                     <Button Grid.Column="1"
-                            Width="28"
-                            Height="24"
+                            Style="{StaticResource ModernWarningBannerActionButtonStyle}"
                             Margin="12,0,0,0"
-                            Padding="0"
-                            Background="Transparent"
-                            BorderThickness="0"
                             Command="{Binding CloseUpdateNoticeCommand}"
-                            Content="×"
-                            Foreground="#6B4E00" />
+                            Content="我知道了" />
                 </Grid>
             </Border>
 
@@ -66,7 +86,7 @@
                     Background="#FEE2E2"
                     BorderBrush="#FCA5A5"
                     BorderThickness="1"
-                    CornerRadius="6"
+                    CornerRadius="8"
                     Visibility="{Binding HasUpdateFailure, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -79,25 +99,21 @@
                                Text="{Binding UpdateFailureMessage}"
                                TextWrapping="Wrap" />
                     <Button Grid.Column="1"
-                            Width="28"
-                            Height="24"
+                            Style="{StaticResource ModernErrorBannerActionButtonStyle}"
                             Margin="12,0,0,0"
-                            Padding="0"
-                            Background="Transparent"
-                            BorderThickness="0"
                             Command="{Binding CloseUpdateFailureCommand}"
-                            Content="×"
-                            Foreground="#7F1D1D" />
+                            Content="我知道了" />
                 </Grid>
             </Border>
 
-            <Grid DockPanel.Dock="Top" Margin="16,16,16,10">
+            <Grid DockPanel.Dock="Top" Margin="16,16,16,8">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0">
+                <Grid x:Name="SearchBarRow" Grid.Row="0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -105,9 +121,8 @@
                     </Grid.ColumnDefinitions>
 
                     <TextBox Grid.Column="0"
+                             Style="{StaticResource ModernTextBoxStyle}"
                              Height="36"
-                             Padding="10,7"
-                             VerticalContentAlignment="Center"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                              ToolTip="按名称、路径、备注搜索" />
 
@@ -124,85 +139,107 @@
                                ToolTip="当前筛选显示数量 / 总快捷项数量" />
 
                     <Button Grid.Column="2"
+                            Style="{StaticResource ModernButtonStyle}"
                             Width="76"
-                            Height="36"
+                            Height="34"
                             Margin="12,0,0,0"
                             Command="{Binding OpenSettingsCommand}"
                             Content="设置" />
                 </Grid>
 
-                <WrapPanel Grid.Row="1"
-                           Margin="0,10,0,0"
+                <WrapPanel x:Name="PrimaryActionRow"
+                           Grid.Row="1"
+                           Margin="0,12,0,0"
                            Orientation="Horizontal">
-                    <Button Width="96"
-                            Height="36"
-                            Margin="0,0,10,8"
+                    <Button Style="{StaticResource ModernButtonStyle}"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,8"
                             Click="WorkspaceButton_Click"
                             Content="工作区" />
-                    <Button Width="96"
-                            Height="36"
-                            Margin="0,0,10,8"
+                    <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,8"
                             Command="{Binding AddShortcutCommand}"
                             Content="新增" />
-                    <Button Width="104"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Command="{Binding UpdateSoftwareCommand}"
-                            Content="更新软件" />
-                    <Button Width="132"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Command="{Binding ExportGlobalConfigCommand}"
-                            Content="导出全局配置" />
-                    <Button Width="132"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Command="{Binding ImportGlobalConfigCommand}"
-                            Content="导入全局配置" />
-                    <Button Width="132"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Command="{Binding OpenBatchImportCommand}"
-                            Content="批量新增识别" />
-                    <Button Width="132"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Command="{Binding DownloadAdminUiLinksCommand}"
-                            Content="自动获取连接" />
-                    <Button Width="96"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Click="FactoryMapButton_Click"
-                            Content="地图" />
-                    <Button Width="104"
-                            Height="36"
-                            Margin="0,0,10,8"
-                            Command="{Binding OpenAdminUiCommand}"
-                            Content="AdminUI" />
-                    <Button Width="96"
-                            Height="36"
-                            Margin="0,0,10,8"
+                    <Button Style="{StaticResource ModernButtonStyle}"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,8"
                             Command="{Binding OpenShortcutCommand}"
                             Content="打开" />
-                    <Button Width="96"
-                            Height="36"
-                            Margin="0,0,10,8"
+                    <Button Style="{StaticResource ModernButtonStyle}"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,8"
                             Command="{Binding EditShortcutCommand}"
                             Content="编辑" />
-                    <Button Width="96"
-                            Height="36"
-                            Margin="0,0,10,8"
+                    <Button Style="{StaticResource ModernButtonStyle}"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,8"
+                            Click="FactoryMapButton_Click"
+                            Content="地图" />
+                    <Button Style="{StaticResource ModernButtonStyle}"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,8"
+                            Command="{Binding OpenAdminUiCommand}"
+                            Content="AdminUI" />
+                    <Button Style="{StaticResource ModernDangerButtonStyle}"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,8"
                             Command="{Binding DeleteShortcutCommand}"
                             Content="删除" />
+                </WrapPanel>
+
+                <WrapPanel x:Name="UtilityActionRow"
+                           Grid.Row="2"
+                           Margin="0,0,0,0"
+                           Orientation="Horizontal">
+                    <Button Style="{StaticResource ModernUpdateSoftwareButtonStyle}"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,8"
+                            Command="{Binding UpdateSoftwareCommand}"
+                            Content="更新软件" />
+                    <Button Style="{StaticResource ModernQuietButtonStyle}"
+                            Width="104"
+                            Margin="0,0,8,8"
+                            Command="{Binding ManualCheckUpdatesCommand}"
+                            Content="检测更新" />
+                    <Button Style="{StaticResource ModernQuietButtonStyle}"
+                            Width="132"
+                            Margin="0,0,8,8"
+                            Command="{Binding DownloadAdminUiLinksCommand}"
+                            Content="自动获取连接" />
+                    <Button Style="{StaticResource ModernQuietButtonStyle}"
+                            Width="132"
+                            Margin="0,0,8,8"
+                            Command="{Binding OpenBatchImportCommand}"
+                            Content="批量新增识别" />
+                    <Button Style="{StaticResource ModernQuietButtonStyle}"
+                            Width="132"
+                            Margin="0,0,8,8"
+                            Command="{Binding ExportGlobalConfigCommand}"
+                            Content="导出全局配置" />
+                    <Button Style="{StaticResource ModernQuietButtonStyle}"
+                            Width="132"
+                            Margin="0,0,8,8"
+                            Command="{Binding ImportGlobalConfigCommand}"
+                            Content="导入全局配置" />
                 </WrapPanel>
             </Grid>
 
             <Border Margin="16,0,16,16"
-                    Background="White"
-                    BorderBrush="#DDE1E7"
+                    Background="{StaticResource ModernSurfaceBrush}"
+                    BorderBrush="{StaticResource ModernSurfaceBorderBrush}"
                     BorderThickness="1"
-                    CornerRadius="6">
+                    CornerRadius="8">
                 <DataGrid x:Name="ShortcutsGrid"
+                          Style="{StaticResource ModernDataGridStyle}"
                           AlternatingRowBackground="#FCFCFD"
                           AutoGenerateColumns="False"
                           Background="White"
@@ -222,82 +259,49 @@
                           ItemsSource="{Binding ShortcutsView}"
                           MouseDoubleClick="ShortcutsGrid_MouseDoubleClick"
                           PreviewMouseRightButtonDown="ShortcutsGrid_PreviewMouseRightButtonDown"
-                          RowHeight="44"
+                          RowHeight="40"
                           RowHeaderWidth="0"
+                          behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                          behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="True"
+                          behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
                           ScrollViewer.CanContentScroll="True"
+                          ScrollViewer.PanningMode="Both"
+                          ScrollViewer.PanningRatio="1"
+                          ScrollViewer.PanningDeceleration="0.001"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                           SelectedItem="{Binding SelectedShortcut, Mode=TwoWay}"
                           SelectionMode="Single"
                           Sorting="ShortcutsGrid_Sorting"
                           VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.ScrollUnit="Pixel"
                           VirtualizingPanel.VirtualizationMode="Recycling">
                     <DataGrid.ContextMenu>
-                        <ContextMenu Padding="0"
-                                     Background="White"
-                                     BorderBrush="#D1D5DB"
-                                     BorderThickness="1">
-                            <ContextMenu.Template>
-                                <ControlTemplate TargetType="ContextMenu">
-                                    <Border Background="White"
-                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                            SnapsToDevicePixels="True">
-                                        <ItemsPresenter />
-                                    </Border>
-                                </ControlTemplate>
-                            </ContextMenu.Template>
-                            <ContextMenu.Resources>
-                                <Style x:Key="CompactMenuItemStyle" TargetType="MenuItem">
-                                    <Setter Property="MinWidth" Value="130" />
-                                    <Setter Property="Padding" Value="14,8" />
-                                    <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="Foreground" Value="#111827" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="MenuItem">
-                                                <Border x:Name="Root"
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}">
-                                                    <ContentPresenter ContentSource="Header"
-                                                                      RecognizesAccessKey="True"
-                                                                      VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsHighlighted" Value="True">
-                                                        <Setter TargetName="Root" Property="Background" Value="#E5F1FB" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsEnabled" Value="False">
-                                                        <Setter Property="Foreground" Value="#9CA3AF" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ContextMenu.Resources>
+                        <ContextMenu Style="{StaticResource ModernContextMenuStyle}">
                             <MenuItem Header="VSCode"
-                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Style="{StaticResource ModernMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.OpenShortcutCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="AdminUI"
-                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Style="{StaticResource ModernMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.OpenAdminUiCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="获取AdminUI连接"
-                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Style="{StaticResource ModernMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.DownloadSelectedAdminUiLinkCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="WebUI"
-                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Style="{StaticResource ModernMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.OpenWebUiCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="编辑"
-                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Style="{StaticResource ModernMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.EditShortcutCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                             <MenuItem Header="删除"
-                                      Style="{StaticResource CompactMenuItemStyle}"
+                                      Style="{StaticResource ModernDangerMenuItemStyle}"
                                       Command="{Binding PlacementTarget.DataContext.DeleteShortcutCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                         </ContextMenu>
                     </DataGrid.ContextMenu>
                     <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader">
-                            <Setter Property="Background" Value="#F9FAFB" />
-                            <Setter Property="Foreground" Value="#6B7280" />
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource ModernDataGridColumnHeaderStyle}">
+                            <Setter Property="Background" Value="#F8FAFC" />
+                            <Setter Property="Foreground" Value="#475569" />
                             <Setter Property="FontSize" Value="13" />
                             <Setter Property="FontWeight" Value="SemiBold" />
                             <Setter Property="Padding" Value="12,0" />
@@ -307,7 +311,7 @@
                         </Style>
                     </DataGrid.ColumnHeaderStyle>
                     <DataGrid.CellStyle>
-                        <Style TargetType="DataGridCell">
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource ModernDataGridCellStyle}">
                             <Setter Property="Padding" Value="12,0" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
                             <Setter Property="BorderThickness" Value="0" />
@@ -327,11 +331,11 @@
                         </Style>
                     </DataGrid.CellStyle>
                     <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow">
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRowStyle}">
                             <Setter Property="Background" Value="White" />
-                            <Setter Property="BorderBrush" Value="#EEF0F3" />
+                            <Setter Property="BorderBrush" Value="#EEF2F7" />
                             <Setter Property="BorderThickness" Value="0,0,0,1" />
-                            <Setter Property="MinHeight" Value="44" />
+                            <Setter Property="MinHeight" Value="40" />
                             <Setter Property="VerticalContentAlignment" Value="Center" />
                             <Setter Property="SnapsToDevicePixels" Value="True" />
                             <Setter Property="Template">
@@ -386,19 +390,6 @@
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Width="5*"
-                                            MinWidth="160"
-                                            Binding="{Binding Description}"
-                                            Header="备注"
-                                            SortMemberPath="Description">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="#4B5563" />
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                    <Setter Property="VerticalAlignment" Value="Center" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Width="5*"
                                             MinWidth="180"
                                             Binding="{Binding SourceModuleName}"
                                             Header="原始模块名"
@@ -409,6 +400,19 @@
                                     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                                     <Setter Property="VerticalAlignment" Value="Center" />
                                     <Setter Property="ToolTip" Value="{Binding SourceModuleName}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Width="5*"
+                                            MinWidth="160"
+                                            Binding="{Binding Description}"
+                                            Header="备注"
+                                            SortMemberPath="Description">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#4B5563" />
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -432,16 +436,17 @@
             </Border>
         </DockPanel>
 
-        <Border Background="#80000000"
-                Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Width="460"
+        <Border Background="#660F172A"
+                Visibility="{Binding IsMainBusyOverlayVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Style="{StaticResource ModernBusyPanelStyle}"
+                    Width="460"
                     Padding="24"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Background="White"
                     BorderBrush="#DDE1E7"
                     BorderThickness="1"
-                    CornerRadius="6">
+                    CornerRadius="8">
                 <StackPanel>
                     <TextBlock Margin="0,0,0,16"
                                FontSize="16"
@@ -463,5 +468,7 @@
                 </StackPanel>
             </Border>
         </Border>
+        </Grid>
     </Grid>
+    </Border>
 </Window>

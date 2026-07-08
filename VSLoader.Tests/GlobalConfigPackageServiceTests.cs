@@ -23,6 +23,15 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
     }
 
     [Fact]
+    public void BuildDefaultExportFileName_uses_stable_file_name_without_timestamp()
+    {
+        var fileName = GlobalConfigPackageService.BuildDefaultExportFileName(
+            new DateTime(2026, 7, 7, 10, 30, 0));
+
+        Assert.Equal("VSLoader_GlobalConfig.json", fileName);
+    }
+
+    [Fact]
     public void Export_writes_workspace_config_program_settings_and_factory_map_layout()
     {
         var config = new AppConfig
@@ -35,6 +44,10 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
             {
                 LastParentFolderPath = @"\\server\line",
                 LastCsvPath = @"\\server\rules.csv"
+            },
+            UpdateCheck = new UpdateCheckConfig
+            {
+                GlobalConfigPackagePath = @"\\server\VSLoader_GlobalConfig.json"
             }
         };
         var appSettings = new AppSettings
@@ -60,8 +73,99 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
         Assert.Equal(@"\\server\manifest.json", package.ProgramSettings.SoftwareUpdateManifestPath);
         Assert.Single(package.WorkspaceConfig.Shortcuts);
         Assert.Equal(@"\\server\rules.csv", package.WorkspaceConfig.BatchImport.LastCsvPath);
+        Assert.Equal(@"\\server\VSLoader_GlobalConfig.json", package.WorkspaceConfig.UpdateCheck.GlobalConfigPackagePath);
         Assert.NotNull(package.FactoryMapLayout);
         Assert.Single(package.FactoryMapLayout!.Devices);
+    }
+
+    [Fact]
+    public void Export_writes_map_hotkey_config()
+    {
+        var config = new AppConfig
+        {
+            MapHotkey = new MapHotkeyConfig
+            {
+                Enabled = true,
+                Ctrl = true,
+                Alt = true,
+                Shift = false,
+                Key = "K"
+            }
+        };
+
+        var result = _service.Export(_packagePath, config, new AppSettings(), string.Empty);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var package = ReadJson<GlobalConfigPackage>(_packagePath);
+        Assert.True(package.WorkspaceConfig.MapHotkey.Enabled);
+        Assert.True(package.WorkspaceConfig.MapHotkey.Ctrl);
+        Assert.True(package.WorkspaceConfig.MapHotkey.Alt);
+        Assert.False(package.WorkspaceConfig.MapHotkey.Shift);
+        Assert.Equal("K", package.WorkspaceConfig.MapHotkey.Key);
+    }
+
+    [Fact]
+    public void Import_writes_map_hotkey_config_to_current_workspace()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        WritePackage(new GlobalConfigPackage
+        {
+            WorkspaceConfig = new AppConfig
+            {
+                MapHotkey = new MapHotkeyConfig
+                {
+                    Enabled = true,
+                    Ctrl = false,
+                    Alt = true,
+                    Shift = true,
+                    Key = "L"
+                }
+            }
+        });
+
+        var result = _service.Import(_packagePath, currentConfigPath, currentLayoutPath, new AppSettings(), _ => null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var imported = ReadJson<AppConfig>(currentConfigPath);
+        Assert.True(imported.MapHotkey.Enabled);
+        Assert.False(imported.MapHotkey.Ctrl);
+        Assert.True(imported.MapHotkey.Alt);
+        Assert.True(imported.MapHotkey.Shift);
+        Assert.Equal("L", imported.MapHotkey.Key);
+    }
+
+    [Fact]
+    public void Import_migrates_legacy_single_key_map_hotkey()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        WritePackage(new GlobalConfigPackage
+        {
+            WorkspaceConfig = new AppConfig
+            {
+                MapHotkey = new MapHotkeyConfig
+                {
+                    Enabled = true,
+                    Ctrl = false,
+                    Alt = false,
+                    Shift = false,
+                    Key = "N"
+                }
+            }
+        });
+
+        var result = _service.Import(_packagePath, currentConfigPath, currentLayoutPath, new AppSettings(), _ => null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var imported = ReadJson<AppConfig>(currentConfigPath);
+        Assert.True(imported.MapHotkey.Enabled);
+        Assert.False(imported.MapHotkey.Ctrl);
+        Assert.True(imported.MapHotkey.Alt);
+        Assert.False(imported.MapHotkey.Shift);
+        Assert.Equal("N", imported.MapHotkey.Key);
     }
 
     [Fact]

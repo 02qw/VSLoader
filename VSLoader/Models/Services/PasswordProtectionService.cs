@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using System.Text;
+using System.Security.Cryptography;
 
 namespace VSLoader.Services;
 
@@ -7,14 +7,7 @@ public sealed class PasswordProtectionService
 {
     public string Protect(string password)
     {
-        if (string.IsNullOrEmpty(password))
-        {
-            return string.Empty;
-        }
-
-        var passwordBytes = Encoding.UTF8.GetBytes(password);
-        var protectedBytes = ProtectedData.Protect(passwordBytes, null, DataProtectionScope.CurrentUser);
-        return Convert.ToBase64String(protectedBytes);
+        return password ?? string.Empty;
     }
 
     public string Unprotect(string protectedPassword)
@@ -32,7 +25,7 @@ public sealed class PasswordProtectionService
         }
         catch
         {
-            return string.Empty;
+            return protectedPassword;
         }
     }
 }

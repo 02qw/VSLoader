@@ -9,10 +9,21 @@ namespace VSLoader.Services;
 
 public sealed class SoftwareUpdateService
 {
+    private readonly PathAccessPreflightService pathAccessPreflightService;
     private readonly JsonSerializerOptions jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
+
+    public SoftwareUpdateService()
+        : this(new PathAccessPreflightService())
+    {
+    }
+
+    public SoftwareUpdateService(PathAccessPreflightService pathAccessPreflightService)
+    {
+        this.pathAccessPreflightService = pathAccessPreflightService;
+    }
 
     public async Task<SoftwareUpdateAvailabilityResult> CheckAvailabilityAsync(
         string manifestPath,
@@ -24,9 +35,10 @@ public sealed class SoftwareUpdateService
             return SoftwareUpdateAvailabilityResult.Fail("软件更新 manifest 路径不能为空。");
         }
 
-        if (!File.Exists(manifestPath))
+        var manifestPreflight = await pathAccessPreflightService.CheckFileAsync(manifestPath);
+        if (!manifestPreflight.Success)
         {
-            return SoftwareUpdateAvailabilityResult.Fail("manifest 文件不存在。");
+            return SoftwareUpdateAvailabilityResult.Fail(ToManifestAccessError(manifestPreflight.ErrorMessage));
         }
 
         try
@@ -62,9 +74,10 @@ public sealed class SoftwareUpdateService
             return SoftwareUpdateResult.Fail("软件更新 manifest 路径不能为空。");
         }
 
-        if (!File.Exists(request.ManifestPath))
+        var manifestPreflight = await pathAccessPreflightService.CheckFileAsync(request.ManifestPath);
+        if (!manifestPreflight.Success)
         {
-            return SoftwareUpdateResult.Fail("manifest 文件不存在。");
+            return SoftwareUpdateResult.Fail(ToManifestAccessError(manifestPreflight.ErrorMessage));
         }
 
         try
@@ -84,9 +97,10 @@ public sealed class SoftwareUpdateService
             }
 
             var packagePath = ResolvePackagePath(request.ManifestPath, manifest.PackageFile);
-            if (!File.Exists(packagePath))
+            var packagePreflight = await pathAccessPreflightService.CheckFileAsync(packagePath);
+            if (!packagePreflight.Success)
             {
-                return SoftwareUpdateResult.Fail("更新包文件不存在。");
+                return SoftwareUpdateResult.Fail(ToPackageAccessError(packagePreflight.ErrorMessage));
             }
 
             var downloadDirectory = Path.Combine(request.UpdatesRoot, "download");
@@ -204,6 +218,30 @@ public sealed class SoftwareUpdateService
 
         var manifestDirectory = Path.GetDirectoryName(manifestPath) ?? string.Empty;
         return Path.Combine(manifestDirectory, packageFile);
+    }
+
+    private static string ToManifestAccessError(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return "manifest 文件不存在或不可访问。";
+        }
+
+        return errorMessage.Contains("文件不存在或不可访问", StringComparison.Ordinal)
+            ? "manifest 文件不存在。"
+            : $"manifest 不可访问：{errorMessage}";
+    }
+
+    private static string ToPackageAccessError(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return "更新包文件不存在或不可访问。";
+        }
+
+        return errorMessage.Contains("文件不存在或不可访问", StringComparison.Ordinal)
+            ? "更新包文件不存在。"
+            : $"更新包不可访问：{errorMessage}";
     }
 
     private static void PrepareCleanDirectory(string directory)

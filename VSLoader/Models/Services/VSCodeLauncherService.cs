@@ -5,6 +5,18 @@ namespace VSLoader.Services;
 
 public sealed class VSCodeLauncherService
 {
+    private readonly PathAccessPreflightService pathAccessPreflightService;
+
+    public VSCodeLauncherService()
+        : this(new PathAccessPreflightService())
+    {
+    }
+
+    public VSCodeLauncherService(PathAccessPreflightService pathAccessPreflightService)
+    {
+        this.pathAccessPreflightService = pathAccessPreflightService;
+    }
+
     public LaunchResult Launch(string vscodePath, string targetPath)
     {
         if (!IsValidExecutablePath(vscodePath))
@@ -15,6 +27,37 @@ public sealed class VSCodeLauncherService
         if (!PathExists(targetPath))
         {
             return LaunchResult.Fail("目标路径不存在或当前不可访问。");
+        }
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = vscodePath,
+                UseShellExecute = false
+            };
+
+            startInfo.ArgumentList.Add(targetPath);
+            Process.Start(startInfo);
+            return LaunchResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            return LaunchResult.Fail(ex.Message);
+        }
+    }
+
+    public async Task<LaunchResult> LaunchAsync(string vscodePath, string targetPath)
+    {
+        if (!IsValidExecutablePath(vscodePath))
+        {
+            return LaunchResult.Fail("VSCode 路径无效，请进入设置重新选择 .exe 文件。");
+        }
+
+        var preflight = await PreflightTargetPathAsync(targetPath);
+        if (!preflight.Success)
+        {
+            return LaunchResult.Fail(preflight.ErrorMessage ?? "目标路径不存在或当前不可访问。");
         }
 
         try
@@ -50,5 +93,17 @@ public sealed class VSCodeLauncherService
     public static bool PathExists(string path)
     {
         return Directory.Exists(path) || File.Exists(path);
+    }
+
+    private async Task<PathAccessPreflightResult> PreflightTargetPathAsync(string targetPath)
+    {
+        if (IsNetworkPath(targetPath))
+        {
+            return await pathAccessPreflightService.CheckDirectoryAsync(targetPath);
+        }
+
+        return PathExists(targetPath)
+            ? PathAccessPreflightResult.Ok()
+            : PathAccessPreflightResult.Fail("目标路径不存在或当前不可访问。");
     }
 }

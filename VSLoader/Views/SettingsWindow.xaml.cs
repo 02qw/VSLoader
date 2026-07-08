@@ -12,7 +12,6 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         Owner = System.Windows.Application.Current.MainWindow;
-        AdminUiPasswordBox.Password = viewModel.AdminUiPassword;
         PreviewKeyDown += SettingsWindow_PreviewKeyDown;
         PreviewMouseDown += SettingsWindow_PreviewMouseDown;
         viewModel.RequestClose += result =>
@@ -20,14 +19,6 @@ public partial class SettingsWindow : Window
             DialogResult = result;
             Close();
         };
-    }
-
-    private void AdminUiPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is SettingsViewModel viewModel)
-        {
-            viewModel.AdminUiPassword = AdminUiPasswordBox.Password;
-        }
     }
 
     internal static double CalculateWheelScrollOffset(double currentOffset, int delta, double scrollableHeight)
@@ -54,13 +45,38 @@ public partial class SettingsWindow : Window
 
     private void SettingsWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (DataContext is not SettingsViewModel { IsRecordingHotkey: true } viewModel)
+        if (DataContext is not SettingsViewModel viewModel)
+        {
+            return;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (viewModel.IsRecordingMapHotkey)
+        {
+            e.Handled = true;
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift
+                or Key.System or Key.None)
+            {
+                return;
+            }
+
+            if (MapHotkeyService.IsSupportedKey(key))
+            {
+                var mapCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+                var mapAlt = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+                var mapShift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+                viewModel.SetRecordedMapHotkey(mapCtrl, mapAlt, mapShift, MapHotkeyService.GetDisplayKey(key));
+            }
+
+            return;
+        }
+
+        if (!viewModel.IsRecordingHotkey)
         {
             return;
         }
 
         e.Handled = true;
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift
             or Key.System or Key.None)
         {
@@ -75,7 +91,18 @@ public partial class SettingsWindow : Window
 
     private void SettingsWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is not SettingsViewModel { IsRecordingHotkey: true } viewModel)
+        if (DataContext is not SettingsViewModel viewModel)
+        {
+            return;
+        }
+
+        if (viewModel.IsRecordingMapHotkey)
+        {
+            e.Handled = e.ChangedButton is MouseButton.XButton1 or MouseButton.XButton2;
+            return;
+        }
+
+        if (!viewModel.IsRecordingHotkey)
         {
             return;
         }

@@ -27,6 +27,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ShortcutSearchService _shortcutSearchService;
     private readonly PasswordProtectionService _passwordProtectionService;
     private readonly ClipboardService _clipboardService;
+    private readonly AdminUiAutoPasteService _adminUiAutoPasteService;
+    private readonly AdminUiAutoPasteLogService _adminUiAutoPasteLogService;
     private readonly UpdateCheckService _updateCheckService;
     private readonly string _updateTimePath;
     private readonly SoftwareUpdateService _softwareUpdateService;
@@ -40,6 +42,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _hasInvalidConfigFile;
     private int _statusMessageVersion;
     private CancellationTokenSource? _updateCheckCancellationTokenSource;
+    private Task? _updateCheckLoopTask;
     private UpdateCheckResult? _lastUpdateCheckResult;
 
     public MainViewModel()
@@ -66,7 +69,9 @@ public sealed partial class MainViewModel : ObservableObject
         GlobalConfigPackageService? globalConfigPackageService = null,
         VSCodePathResolver? vsCodePathResolver = null,
         UpdaterRunnerService? updaterRunnerService = null,
-        string? factoryMapLayoutPath = null)
+        AdminUiAutoPasteService? adminUiAutoPasteService = null,
+        string? factoryMapLayoutPath = null,
+        AdminUiAutoPasteLogService? adminUiAutoPasteLogService = null)
     {
         _appSettings = appSettings;
         _appSettingsService = appSettingsService;
@@ -79,6 +84,8 @@ public sealed partial class MainViewModel : ObservableObject
         _shortcutSearchService = shortcutSearchService;
         _passwordProtectionService = passwordProtectionService;
         _clipboardService = clipboardService;
+        _adminUiAutoPasteService = adminUiAutoPasteService ?? new AdminUiAutoPasteService();
+        _adminUiAutoPasteLogService = adminUiAutoPasteLogService ?? new AdminUiAutoPasteLogService();
         _updateCheckService = updateCheckService ?? new UpdateCheckService();
         _updateTimePath = string.IsNullOrWhiteSpace(updateTimePath)
             ? Path.Combine(_configService.ConfigDirectory, "updateTime.json")
@@ -107,7 +114,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     public HotkeyConfig CurrentHotkey => _config.Hotkey;
 
-    public Func<HotkeyConfig, SaveResult>? TryRegisterHotkey { get; set; }
+    public MapHotkeyConfig CurrentMapHotkey => _config.MapHotkey;
+
+    public Func<HotkeyConfig, MapHotkeyConfig, SaveResult>? TryRegisterHotkeys { get; set; }
 
     public Func<string, string, bool> StartUpdater { get; set; } = static (path, arguments) =>
     {
@@ -158,6 +167,9 @@ public sealed partial class MainViewModel : ObservableObject
     private bool hasUpdateNotice;
 
     [ObservableProperty]
+    private bool hasSoftwareUpdateNotice;
+
+    [ObservableProperty]
     private string updateFailureMessage = string.Empty;
 
     [ObservableProperty]
@@ -166,6 +178,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddShortcutCommand))]
     [NotifyCanExecuteChangedFor(nameof(UpdateSoftwareCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ManualCheckUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenBatchImportCommand))]
     [NotifyCanExecuteChangedFor(nameof(DownloadAdminUiLinksCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenAdminUiCommand))]
@@ -192,11 +205,31 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string busyCurrentItemText = string.Empty;
 
+    [ObservableProperty]
+    private BusyOverlayHost busyOverlayHost = BusyOverlayHost.Main;
+
     public bool IsNotBusy => !IsBusy;
+
+    public bool IsMainBusyOverlayVisible => IsBusy && BusyOverlayHost == BusyOverlayHost.Main;
+
+    public bool IsMapBusyOverlayVisible => IsBusy && BusyOverlayHost == BusyOverlayHost.Map;
+
+    internal static bool ShouldShowNoUpdateStatus(UpdateCheckResult result)
+    {
+        return result.UpdatedItems.Count == 0 && result.Failures.Count == 0;
+    }
 
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(IsNotBusy));
+        OnPropertyChanged(nameof(IsMainBusyOverlayVisible));
+        OnPropertyChanged(nameof(IsMapBusyOverlayVisible));
+    }
+
+    partial void OnBusyOverlayHostChanged(BusyOverlayHost value)
+    {
+        OnPropertyChanged(nameof(IsMainBusyOverlayVisible));
+        OnPropertyChanged(nameof(IsMapBusyOverlayVisible));
     }
 
     partial void OnSearchTextChanged(string value)
@@ -208,8 +241,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         StopUpdateCheckLoop();
         _updateCheckCancellationTokenSource = new CancellationTokenSource();
-        _ = RunUpdateCheckLoopAsync(_updateCheckCancellationTokenSource.Token);
+        _updateCheckLoopTask = RunUpdateCheckLoopAsync(_updateCheckCancellationTokenSource.Token);
     }
+
+    public bool IsUpdateCheckLoopRunning => _updateCheckLoopTask is { IsCompleted: false };
 
     public void StopUpdateCheckLoop()
     {
@@ -221,10 +256,63 @@ public sealed partial class MainViewModel : ObservableObject
         _updateCheckCancellationTokenSource.Cancel();
         _updateCheckCancellationTokenSource.Dispose();
         _updateCheckCancellationTokenSource = null;
+        if (_updateCheckLoopTask?.IsCompleted == true)
+        {
+            _updateCheckLoopTask = null;
+        }
+    }
+
+    public async Task StopUpdateCheckLoopAsync(TimeSpan timeout)
+    {
+        var cts = _updateCheckCancellationTokenSource;
+        var loopTask = _updateCheckLoopTask;
+        if (cts is null || loopTask is null)
+        {
+            _updateCheckCancellationTokenSource = null;
+            _updateCheckLoopTask = null;
+            return;
+        }
+
+        cts.Cancel();
+        try
+        {
+            await loopTask.WaitAsync(timeout);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (TimeoutException)
+        {
+        }
+        catch
+        {
+        }
+        finally
+        {
+            cts.Dispose();
+            if (ReferenceEquals(_updateCheckCancellationTokenSource, cts))
+            {
+                _updateCheckCancellationTokenSource = null;
+            }
+
+            if (ReferenceEquals(_updateCheckLoopTask, loopTask))
+            {
+                _updateCheckLoopTask = null;
+            }
+        }
     }
 
     public void ApplyUpdateCheckResult(UpdateCheckResult result)
     {
+        if (!string.IsNullOrWhiteSpace(result.DetectedSoftwareVersion))
+        {
+            HasSoftwareUpdateNotice = true;
+        }
+        else if (result.Failures.Count == 0)
+        {
+            HasSoftwareUpdateNotice = false;
+        }
+
         if (result.UpdatedItems.Count > 0)
         {
             _lastUpdateCheckResult = result;
@@ -304,6 +392,7 @@ public sealed partial class MainViewModel : ObservableObject
         _lastUpdateCheckResult = null;
         UpdateNoticeMessage = string.Empty;
         HasUpdateNotice = false;
+        HasSoftwareUpdateNotice = false;
     }
 
     [RelayCommand]
@@ -361,6 +450,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (!availability.UpdateAvailable)
             {
+                HasSoftwareUpdateNotice = false;
                 _dialogService.ShowInfo(availability.Message);
                 return;
             }
@@ -415,6 +505,43 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
+    private async Task ManualCheckUpdatesAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            BusyOverlayHost = BusyOverlayHost.Main;
+            BusyMessage = "正在检测更新...";
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 0;
+            BusyProgressText = string.Empty;
+            BusyCurrentItemText = string.Empty;
+
+            await StopUpdateCheckLoopAsync(TimeSpan.FromSeconds(2));
+            var result = await CheckUpdatesOnceAsync(CancellationToken.None);
+            if (ShouldShowNoUpdateStatus(result))
+            {
+                ShowTemporaryStatusMessage("已完成检测，当前没有发现更新。");
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+            BusyMessage = string.Empty;
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 0;
+            BusyProgressText = string.Empty;
+            BusyCurrentItemText = string.Empty;
+            StartUpdateCheckLoop();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private async Task ExportGlobalConfigAsync()
     {
         var defaultFileName = GlobalConfigPackageService.BuildDefaultExportFileName(DateTime.Now);
@@ -442,6 +569,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             BusyProgressValue = 100;
+            MarkExportedGlobalConfigUsedIfConfiguredPath(packagePath);
             _dialogService.ShowInfo(BuildGlobalConfigExportMessage(packagePath, result));
             await Task.CompletedTask;
         }
@@ -496,6 +624,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             LoadConfig();
             TryRegisterImportedHotkey(result);
+            MarkImportedGlobalConfigUsed(packagePath);
             BusyProgressValue = 100;
             ApplyGlobalConfigImportStatus(result);
             _dialogService.ShowInfo(BuildGlobalConfigImportMessage(result));
@@ -546,15 +675,57 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void TryRegisterImportedHotkey(GlobalConfigImportResult result)
     {
-        if (TryRegisterHotkey is null || !_config.Hotkey.Enabled)
+        if (TryRegisterHotkeys is null || (!_config.Hotkey.Enabled && !_config.MapHotkey.Enabled))
         {
             return;
         }
 
-        var hotkeyResult = TryRegisterHotkey(_config.Hotkey);
+        var hotkeyResult = TryRegisterHotkeys(_config.Hotkey, _config.MapHotkey);
         if (!hotkeyResult.Success)
         {
             result.Warnings.Add($"快捷键注册失败：{hotkeyResult.ErrorMessage}");
+        }
+    }
+
+    private void MarkExportedGlobalConfigUsedIfConfiguredPath(string packagePath)
+    {
+        if (!IsSamePath(packagePath, _config.UpdateCheck.GlobalConfigPackagePath))
+        {
+            return;
+        }
+
+        var markResult = _updateCheckService.MarkGlobalConfigUsed(packagePath, _updateTimePath);
+        if (!markResult.Success)
+        {
+            ShowUpdateFailure($"全局配置基线更新失败：{markResult.ErrorMessage}");
+        }
+    }
+
+    private void MarkImportedGlobalConfigUsed(string packagePath)
+    {
+        var markResult = _updateCheckService.MarkGlobalConfigUsed(packagePath, _updateTimePath);
+        if (!markResult.Success)
+        {
+            ShowUpdateFailure($"全局配置基线更新失败：{markResult.ErrorMessage}");
+        }
+    }
+
+    private static bool IsSamePath(string? firstPath, string? secondPath)
+    {
+        if (string.IsNullOrWhiteSpace(firstPath) || string.IsNullOrWhiteSpace(secondPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var firstFullPath = Path.GetFullPath(firstPath.Trim());
+            var secondFullPath = Path.GetFullPath(secondPath.Trim());
+            return string.Equals(firstFullPath, secondFullPath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -637,6 +808,7 @@ public sealed partial class MainViewModel : ObservableObject
         BusyProgressMaximum = 0;
         BusyProgressText = string.Empty;
         BusyCurrentItemText = string.Empty;
+        BusyOverlayHost = BusyOverlayHost.Main;
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
@@ -915,14 +1087,15 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var result = _adminUiService.OpenAdminUi(SelectedShortcut, _config.AdminUi);
+        var adminUiConfig = _config.AdminUi.Clone();
+        var result = await _adminUiService.OpenAdminUiAsync(SelectedShortcut, adminUiConfig);
         if (!result.Success)
         {
             _dialogService.ShowError(result.ErrorMessage ?? "打开 AdminUI 失败。");
             return;
         }
 
-        var password = _passwordProtectionService.Unprotect(_config.AdminUi.ProtectedPassword);
+        var password = _passwordProtectionService.Unprotect(adminUiConfig.ProtectedPassword);
         if (string.IsNullOrEmpty(password))
         {
             ShowTemporaryStatusMessage("AdminUI 已打开，但未配置 AdminUI 密码。");
@@ -932,22 +1105,55 @@ public sealed partial class MainViewModel : ObservableObject
         var clipboardResult = await _clipboardService.SetTextWithRetryAsync(password);
         if (clipboardResult.Success)
         {
-            ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
+            LogAdminUiClipboardCheck(password);
+            if (!adminUiConfig.AutoPastePasswordEnabled)
+            {
+                ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
+                return;
+            }
+
+            ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板，正在等待 AdminUI 前台窗口...");
+            var pasteResult = await _adminUiAutoPasteService.TryPasteAsync(adminUiConfig);
+            if (pasteResult.Success)
+            {
+                ShowTemporaryStatusMessage("AdminUI 已打开，密码已自动粘贴并回车。");
+                return;
+            }
+
+            ShowTemporaryStatusMessage($"AdminUI 已打开，密码已复制到剪贴板。{pasteResult.Message}请手动粘贴。");
             return;
         }
 
         _dialogService.ShowError($"AdminUI 已打开，但写入剪贴板失败：{clipboardResult.ErrorMessage}");
     }
 
+    private void LogAdminUiClipboardCheck(string expectedText)
+    {
+        try
+        {
+            var clipboardText = System.Windows.Clipboard.ContainsText()
+                ? System.Windows.Clipboard.GetText()
+                : string.Empty;
+            _adminUiAutoPasteLogService.LogClipboardCheck(
+                expectedText.Length,
+                clipboardText.Length,
+                string.Equals(clipboardText, expectedText, StringComparison.Ordinal));
+        }
+        catch (Exception ex)
+        {
+            _adminUiAutoPasteLogService.LogError(ex);
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
-    private void OpenWebUi()
+    private async Task OpenWebUiAsync()
     {
         if (SelectedShortcut is null)
         {
             return;
         }
 
-        var result = _webUiService.OpenWebUi(SelectedShortcut, _config.WebUi);
+        var result = await _webUiService.OpenWebUiAsync(SelectedShortcut, _config.WebUi);
         if (!result.Success)
         {
             _dialogService.ShowError(result.ErrorMessage ?? "打开 WebUI 失败。");
@@ -976,6 +1182,16 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    internal void ApplyEditedShortcutFromMap(ShortcutItem shortcut, ShortcutItem editedShortcut)
+    {
+        shortcut.Name = editedShortcut.Name;
+        shortcut.TargetPath = editedShortcut.TargetPath;
+        shortcut.Description = editedShortcut.Description;
+        shortcut.UpdatedAt = DateTime.Now;
+        SaveCurrentConfig();
+        RefreshShortcutsView();
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
     private void DeleteShortcut()
     {
@@ -996,14 +1212,14 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
-    private void OpenShortcut()
+    private async Task OpenShortcutAsync()
     {
         if (SelectedShortcut is null)
         {
             return;
         }
 
-        var result = _launcherService.Launch(_appSettings.VSCodePath, SelectedShortcut.TargetPath);
+        var result = await _launcherService.LaunchAsync(_appSettings.VSCodePath, SelectedShortcut.TargetPath);
         if (!result.Success)
         {
             _dialogService.ShowError(result.ErrorMessage ?? "打开 VSCode 失败。");
@@ -1013,7 +1229,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenSettings()
     {
-        var viewModel = new SettingsViewModel(_appSettings.VSCodePath, _appSettings.SoftwareUpdateManifestPath, _config.AdminUi, _config.WebUi, _config.UpdateCheck, _config.Hotkey, _dialogService, _passwordProtectionService, TryRegisterHotkey);
+        var viewModel = new SettingsViewModel(_appSettings.VSCodePath, _appSettings.SoftwareUpdateManifestPath, _config.AdminUi, _config.WebUi, _config.UpdateCheck, _config.Hotkey, _config.MapHotkey, _dialogService, _passwordProtectionService, TryRegisterHotkeys);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
@@ -1031,6 +1247,7 @@ public sealed partial class MainViewModel : ObservableObject
             _config.WebUi = viewModel.WebUi.Clone();
             _config.UpdateCheck = viewModel.UpdateCheck.Clone();
             _config.Hotkey = viewModel.Hotkey.Clone();
+            _config.MapHotkey = viewModel.MapHotkey.Clone();
             SaveCurrentConfig();
             _configLoadFailed = false;
             UpdateStatusMessage();
@@ -1091,7 +1308,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private async Task CheckUpdatesOnceAsync(CancellationToken cancellationToken)
+    private async Task<UpdateCheckResult> CheckUpdatesOnceAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -1103,24 +1320,27 @@ public sealed partial class MainViewModel : ObservableObject
             var result = await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return _updateCheckService.Check(updateCheckConfig, updateTimePath, currentVersion, softwareUpdateManifestPath);
+                return _updateCheckService.CheckAsync(updateCheckConfig, updateTimePath, currentVersion, softwareUpdateManifestPath, cancellationToken);
             }, cancellationToken);
 
             if (cancellationToken.IsCancellationRequested)
             {
-                return;
+                return new UpdateCheckResult();
             }
 
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ApplyUpdateCheckResult(result));
+            return result;
         }
         catch (OperationCanceledException)
         {
+            return new UpdateCheckResult();
         }
         catch (Exception ex)
         {
             var result = new UpdateCheckResult();
             result.Failures.Add(ex.Message);
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ApplyUpdateCheckResult(result));
+            return result;
         }
     }
 

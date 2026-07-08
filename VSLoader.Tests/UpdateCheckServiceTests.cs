@@ -18,117 +18,173 @@ public sealed class UpdateCheckServiceTests : IDisposable
     }
 
     [Fact]
-    public void Missing_updateTime_initializes_rules_and_map_without_update_notice()
+    public void Missing_updateTime_initializes_global_config_without_update_notice()
     {
-        var rulesPath = CreateFile("rules.csv", "rules", new DateTime(2026, 6, 1, 1, 0, 0, DateTimeKind.Utc));
-        var mapPath = CreateFile("map.json", "map", new DateTime(2026, 6, 1, 2, 0, 0, DateTimeKind.Utc));
+        var exportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8));
+        var packagePath = CreateGlobalConfigPackage("global-config.json", exportedAt, new DateTime(2026, 7, 6, 17, 0, 0, DateTimeKind.Utc));
 
         var result = _service.Check(new UpdateCheckConfig
         {
-            RulesFilePath = rulesPath,
-            MapFilePath = mapPath
+            GlobalConfigPackagePath = packagePath
         }, _updateTimePath, new Version(1, 7, 2));
 
         var state = ReadState();
         Assert.Empty(result.UpdatedItems);
         Assert.Empty(result.Failures);
-        Assert.Equal(File.GetLastWriteTimeUtc(rulesPath), state.Rules.LastUsedWriteTimeUtc);
-        Assert.Equal(File.GetLastWriteTimeUtc(mapPath), state.Map.LastUsedWriteTimeUtc);
+        Assert.Equal(File.GetLastWriteTimeUtc(packagePath), state.GlobalConfig.LastSeenWriteTimeUtc);
+        Assert.Equal(exportedAt, state.GlobalConfig.LastUsedExportedAt);
     }
 
     [Fact]
-    public void Rules_file_newer_than_baseline_returns_rules_update_without_changing_baseline()
+    public void Global_config_package_new_exported_at_shows_update_notice()
     {
-        var baseline = new DateTime(2026, 6, 1, 1, 0, 0, DateTimeKind.Utc);
-        var rulesPath = CreateFile("rules.csv", "rules", baseline.AddHours(1));
+        var baselineExportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8));
+        var newerExportedAt = baselineExportedAt.AddHours(2);
+        var writeTimeUtc = new DateTime(2026, 7, 6, 19, 0, 0, DateTimeKind.Utc);
+        var packagePath = CreateGlobalConfigPackage("global-config.json", newerExportedAt, writeTimeUtc);
         WriteState(new UpdateTimeState
         {
-            Rules = new UpdateFileState { LastUsedWriteTimeUtc = baseline }
+            GlobalConfig = new UpdateGlobalConfigState
+            {
+                LastSeenWriteTimeUtc = writeTimeUtc.AddHours(-1),
+                LastUsedExportedAt = baselineExportedAt
+            }
         });
 
-        var result = _service.Check(new UpdateCheckConfig { RulesFilePath = rulesPath }, _updateTimePath, new Version(1, 7, 2));
+        var result = _service.Check(new UpdateCheckConfig
+        {
+            GlobalConfigPackagePath = packagePath
+        }, _updateTimePath, new Version(1, 7, 2));
 
-        Assert.Contains("批量规则文件", result.UpdatedItems);
-        Assert.Equal(File.GetLastWriteTimeUtc(rulesPath), result.DetectedRulesWriteTimeUtc);
-        Assert.Equal(baseline, ReadState().Rules.LastUsedWriteTimeUtc);
+        Assert.Contains("全局配置", result.UpdatedItems);
+        Assert.Equal(newerExportedAt, result.DetectedGlobalConfigExportedAt);
+        Assert.Equal(File.GetLastWriteTimeUtc(packagePath), result.DetectedGlobalConfigWriteTimeUtc);
+        Assert.Equal(baselineExportedAt, ReadState().GlobalConfig.LastUsedExportedAt);
     }
 
     [Fact]
-    public void AcknowledgeDetectedUpdates_updates_rules_baseline_and_prevents_same_notice()
+    public void AcknowledgeDetectedUpdates_updates_global_config_baseline()
     {
-        var baseline = new DateTime(2026, 6, 1, 1, 0, 0, DateTimeKind.Utc);
-        var rulesPath = CreateFile("rules.csv", "rules", baseline.AddHours(1));
+        var baselineExportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8));
+        var newerExportedAt = baselineExportedAt.AddHours(2);
+        var writeTimeUtc = new DateTime(2026, 7, 6, 19, 0, 0, DateTimeKind.Utc);
         WriteState(new UpdateTimeState
         {
-            Rules = new UpdateFileState { LastUsedWriteTimeUtc = baseline }
+            GlobalConfig = new UpdateGlobalConfigState
+            {
+                LastSeenWriteTimeUtc = writeTimeUtc.AddHours(-1),
+                LastUsedExportedAt = baselineExportedAt
+            }
         });
+        var result = new UpdateCheckResult
+        {
+            DetectedGlobalConfigExportedAt = newerExportedAt,
+            DetectedGlobalConfigWriteTimeUtc = writeTimeUtc
+        };
+        result.UpdatedItems.Add("全局配置");
 
-        var firstResult = _service.Check(new UpdateCheckConfig { RulesFilePath = rulesPath }, _updateTimePath, new Version(1, 7, 2));
-        var acknowledgeResult = _service.AcknowledgeDetectedUpdates(_updateTimePath, firstResult);
-        var secondResult = _service.Check(new UpdateCheckConfig { RulesFilePath = rulesPath }, _updateTimePath, new Version(1, 7, 2));
+        var acknowledgeResult = _service.AcknowledgeDetectedUpdates(_updateTimePath, result);
 
+        var state = ReadState();
         Assert.True(acknowledgeResult.Success, acknowledgeResult.ErrorMessage);
-        Assert.Equal(File.GetLastWriteTimeUtc(rulesPath), ReadState().Rules.LastUsedWriteTimeUtc);
-        Assert.DoesNotContain("批量规则文件", secondResult.UpdatedItems);
+        Assert.Equal(newerExportedAt, state.GlobalConfig.LastUsedExportedAt);
+        Assert.Equal(writeTimeUtc, state.GlobalConfig.LastSeenWriteTimeUtc);
     }
 
     [Fact]
-    public void MarkRulesUsed_updates_rules_baseline()
+    public void MarkGlobalConfigUsed_updates_global_config_baseline()
     {
-        var rulesTime = new DateTime(2026, 6, 1, 3, 0, 0, DateTimeKind.Utc);
-        var rulesPath = CreateFile("rules.csv", "rules", rulesTime);
+        var exportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8));
+        var packagePath = CreateGlobalConfigPackage("global-config.json", exportedAt, new DateTime(2026, 7, 6, 17, 0, 0, DateTimeKind.Utc));
 
-        var result = _service.MarkRulesUsed(new UpdateCheckConfig { RulesFilePath = rulesPath }, _updateTimePath);
+        var result = _service.MarkGlobalConfigUsed(packagePath, _updateTimePath);
 
+        var state = ReadState();
         Assert.True(result.Success, result.ErrorMessage);
-        Assert.Equal(File.GetLastWriteTimeUtc(rulesPath), ReadState().Rules.LastUsedWriteTimeUtc);
+        Assert.Equal(File.GetLastWriteTimeUtc(packagePath), state.GlobalConfig.LastSeenWriteTimeUtc);
+        Assert.Equal(exportedAt, state.GlobalConfig.LastUsedExportedAt);
     }
 
     [Fact]
-    public void Map_file_newer_than_baseline_returns_map_update()
+    public void Global_config_unchanged_write_time_does_not_read_json()
     {
-        var baseline = new DateTime(2026, 6, 1, 1, 0, 0, DateTimeKind.Utc);
-        var mapPath = CreateFile("map.json", "map", baseline.AddHours(1));
+        var writeTimeUtc = new DateTime(2026, 7, 6, 17, 0, 0, DateTimeKind.Utc);
+        var packagePath = CreateFile("global-config.json", "{ broken json", writeTimeUtc);
         WriteState(new UpdateTimeState
         {
-            Map = new UpdateFileState { LastUsedWriteTimeUtc = baseline }
+            GlobalConfig = new UpdateGlobalConfigState
+            {
+                LastSeenWriteTimeUtc = writeTimeUtc,
+                LastUsedExportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8))
+            }
         });
 
-        var result = _service.Check(new UpdateCheckConfig { MapFilePath = mapPath }, _updateTimePath, new Version(1, 7, 2));
+        var result = _service.Check(new UpdateCheckConfig
+        {
+            GlobalConfigPackagePath = packagePath
+        }, _updateTimePath, new Version(1, 7, 2));
 
-        Assert.Contains("地图配置文件", result.UpdatedItems);
-        Assert.Equal(File.GetLastWriteTimeUtc(mapPath), result.DetectedMapWriteTimeUtc);
+        Assert.Empty(result.UpdatedItems);
+        Assert.Empty(result.Failures);
     }
 
     [Fact]
-    public void AcknowledgeDetectedUpdates_updates_map_baseline_and_prevents_same_notice()
+    public void Global_config_write_time_changed_but_exported_at_same_does_not_show_update()
     {
-        var baseline = new DateTime(2026, 6, 1, 1, 0, 0, DateTimeKind.Utc);
-        var mapPath = CreateFile("map.json", "map", baseline.AddHours(1));
+        var exportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8));
+        var writeTimeUtc = new DateTime(2026, 7, 6, 18, 0, 0, DateTimeKind.Utc);
+        var packagePath = CreateGlobalConfigPackage("global-config.json", exportedAt, writeTimeUtc);
         WriteState(new UpdateTimeState
         {
-            Map = new UpdateFileState { LastUsedWriteTimeUtc = baseline }
+            GlobalConfig = new UpdateGlobalConfigState
+            {
+                LastSeenWriteTimeUtc = writeTimeUtc.AddHours(-1),
+                LastUsedExportedAt = exportedAt
+            }
         });
 
-        var firstResult = _service.Check(new UpdateCheckConfig { MapFilePath = mapPath }, _updateTimePath, new Version(1, 7, 2));
-        var acknowledgeResult = _service.AcknowledgeDetectedUpdates(_updateTimePath, firstResult);
-        var secondResult = _service.Check(new UpdateCheckConfig { MapFilePath = mapPath }, _updateTimePath, new Version(1, 7, 2));
+        var result = _service.Check(new UpdateCheckConfig
+        {
+            GlobalConfigPackagePath = packagePath
+        }, _updateTimePath, new Version(1, 7, 2));
 
-        Assert.True(acknowledgeResult.Success, acknowledgeResult.ErrorMessage);
-        Assert.Equal(File.GetLastWriteTimeUtc(mapPath), ReadState().Map.LastUsedWriteTimeUtc);
-        Assert.DoesNotContain("地图配置文件", secondResult.UpdatedItems);
+        Assert.DoesNotContain("全局配置", result.UpdatedItems);
+        Assert.Equal(File.GetLastWriteTimeUtc(packagePath), ReadState().GlobalConfig.LastSeenWriteTimeUtc);
+        Assert.Equal(exportedAt, ReadState().GlobalConfig.LastUsedExportedAt);
     }
 
     [Fact]
-    public void MarkMapUsed_updates_map_baseline()
+    public void Global_config_invalid_package_returns_failure()
     {
-        var mapTime = new DateTime(2026, 6, 1, 3, 0, 0, DateTimeKind.Utc);
-        var mapPath = CreateFile("map.json", "map", mapTime);
+        var packagePath = CreateFile("global-config.json", "{ broken json", DateTime.UtcNow);
 
-        var result = _service.MarkMapUsed(mapPath, _updateTimePath);
+        var result = _service.Check(new UpdateCheckConfig
+        {
+            GlobalConfigPackagePath = packagePath
+        }, _updateTimePath, new Version(1, 7, 2));
 
-        Assert.True(result.Success, result.ErrorMessage);
-        Assert.Equal(File.GetLastWriteTimeUtc(mapPath), ReadState().Map.LastUsedWriteTimeUtc);
+        Assert.Contains(result.Failures, failure => failure.Contains("全局配置包格式无效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CheckAsync_does_not_check_rules_or_map_paths()
+    {
+        var service = new UpdateCheckService(new PathAccessPreflightService(
+            (_, _, _) => Task.FromResult(false),
+            _ => true,
+            _ => throw new InvalidOperationException("rules and map should not be checked")));
+
+        var result = await service.CheckAsync(
+            new UpdateCheckConfig
+            {
+                RulesFilePath = @"\\192.168.15.69\release\rules.csv",
+                MapFilePath = @"\\192.168.15.69\release\map.json"
+            },
+            _updateTimePath,
+            new Version(1, 7, 2));
+
+        Assert.Empty(result.Failures);
+        Assert.Empty(result.UpdatedItems);
     }
 
     [Fact]
@@ -144,7 +200,6 @@ public sealed class UpdateCheckServiceTests : IDisposable
 
         Assert.Contains("软件版本", result.UpdatedItems);
         Assert.Equal("1.7.3", result.DetectedSoftwareVersion);
-        Assert.True(!File.Exists(_updateTimePath) || ReadState().Software.LastUsedVersion != "1.7.3");
     }
 
     [Fact]
@@ -174,47 +229,16 @@ public sealed class UpdateCheckServiceTests : IDisposable
     }
 
     [Fact]
-    public void Newer_manifest_version_than_acknowledged_returns_notice()
+    public void Missing_rules_or_map_paths_are_ignored()
     {
-        var manifestPath = CreateManifest("manifest.json", "1.7.4");
-        WriteState(new UpdateTimeState
+        var result = _service.Check(new UpdateCheckConfig
         {
-            Software = new UpdateSoftwareState { LastUsedVersion = "1.7.3" }
-        });
+            RulesFilePath = Path.Combine(_rootPath, "missing-rules.csv"),
+            MapFilePath = Path.Combine(_rootPath, "missing-map.json")
+        }, _updateTimePath, new Version(1, 7, 2));
 
-        var result = _service.Check(
-            new UpdateCheckConfig(),
-            _updateTimePath,
-            new Version(1, 7, 2),
-            manifestPath);
-
-        Assert.Contains("软件版本", result.UpdatedItems);
-        Assert.Equal("1.7.4", result.DetectedSoftwareVersion);
-    }
-
-    [Fact]
-    public void Software_manifest_version_equal_current_updates_software_baseline()
-    {
-        var manifestPath = CreateManifest("manifest.json", "1.7.3");
-
-        var result = _service.Check(
-            new UpdateCheckConfig(),
-            _updateTimePath,
-            new Version(1, 7, 3),
-            manifestPath);
-
-        Assert.DoesNotContain("软件版本", result.UpdatedItems);
-        Assert.Equal("1.7.3", ReadState().Software.LastUsedVersion);
-    }
-
-    [Fact]
-    public void Missing_configured_file_returns_failure()
-    {
-        var missingPath = Path.Combine(_rootPath, "missing.csv");
-
-        var result = _service.Check(new UpdateCheckConfig { RulesFilePath = missingPath }, _updateTimePath, new Version(1, 7, 2));
-
-        Assert.Contains("rules 文件不存在", result.Failures);
+        Assert.Empty(result.Failures);
+        Assert.Empty(result.UpdatedItems);
     }
 
     [Fact]
@@ -229,6 +253,24 @@ public sealed class UpdateCheckServiceTests : IDisposable
             manifestPath);
 
         Assert.Contains("软件更新 manifest 文件不存在", result.Failures);
+    }
+
+    [Fact]
+    public async Task CheckAsync_reports_failure_without_reading_unreachable_manifest()
+    {
+        var service = new UpdateCheckService(new PathAccessPreflightService(
+            (_, _, _) => Task.FromResult(false),
+            _ => true,
+            _ => throw new InvalidOperationException("manifest should not be checked")));
+
+        var result = await service.CheckAsync(
+            new UpdateCheckConfig(),
+            _updateTimePath,
+            new Version(1, 7, 2),
+            @"\\192.168.15.69\release\manifest.json");
+
+        Assert.Contains(result.Failures, failure => failure.Contains("软件更新 manifest 不可访问", StringComparison.Ordinal));
+        Assert.Contains(result.Failures, failure => failure.Contains("网络连接失败", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -288,6 +330,20 @@ public sealed class UpdateCheckServiceTests : IDisposable
         File.WriteAllText(path, content);
         File.SetLastWriteTimeUtc(path, writeTimeUtc);
         return path;
+    }
+
+    private string CreateGlobalConfigPackage(string fileName, DateTimeOffset exportedAt, DateTime writeTimeUtc)
+    {
+        return CreateFile(fileName, $$"""
+        {
+          "schemaVersion": 1,
+          "appName": "VSLoader",
+          "exportedAt": "{{exportedAt:O}}",
+          "programSettings": {},
+          "workspaceConfig": {},
+          "factoryMapLayout": null
+        }
+        """, writeTimeUtc);
     }
 
     private string CreateManifest(string fileName, string version)

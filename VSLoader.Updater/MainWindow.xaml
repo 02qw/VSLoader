@@ -15,7 +15,10 @@
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     </Window.Resources>
 
-    <Grid Margin="18">
+    <Border Margin="18"
+            Padding="18"
+            Style="{StaticResource ModernDialogSurfaceStyle}">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -29,11 +32,11 @@
                    FontFamily="Microsoft YaHei UI"
                    FontSize="18"
                    FontWeight="SemiBold"
-                   Foreground="#111827"
+                   Foreground="{StaticResource ModernPrimaryTextBrush}"
                    Text="正在更新 VSLoader" />
 
         <ProgressBar Grid.Row="1"
-                     Height="12"
+                     Style="{StaticResource ModernProgressBarStyle}"
                      Margin="0,18,0,12"
                      Maximum="100"
                      Value="{Binding ProgressValue, Mode=OneWay}" />
@@ -41,20 +44,20 @@
         <TextBlock Grid.Row="2"
                    FontFamily="Microsoft YaHei UI"
                    FontSize="13"
-                   Foreground="#374151"
+                   Foreground="{StaticResource ModernBodyTextBrush}"
                    Text="{Binding StatusText}"
                    TextWrapping="Wrap" />
 
         <GroupBox Grid.Row="3"
+                  Style="{StaticResource ModernGroupBoxStyle}"
                   Margin="0,14,0,0"
-                  Padding="10"
                   Header="本次更新内容"
                   Visibility="{Binding ShowReleaseNotes, Converter={StaticResource BooleanToVisibilityConverter}}">
             <ScrollViewer MaxHeight="82"
                           VerticalScrollBarVisibility="Auto">
                 <TextBlock FontFamily="Microsoft YaHei UI"
                            FontSize="12"
-                           Foreground="#374151"
+                           Foreground="{StaticResource ModernBodyTextBrush}"
                            Text="{Binding ReleaseNotesText}"
                            TextWrapping="Wrap" />
             </ScrollViewer>
@@ -62,14 +65,9 @@
 
         <Border Grid.Row="4"
                 Margin="0,14,0,14"
-                BorderBrush="#E5E7EB"
-                BorderThickness="1"
-                Background="#FAFAFA">
+                Style="{StaticResource ModernSurfaceBorderStyle}">
             <ListBox x:Name="DetailList"
-                     BorderThickness="0"
-                     Background="Transparent"
-                     FontFamily="Consolas, Microsoft YaHei UI"
-                     FontSize="12"
+                     Style="{StaticResource ModernLogListBoxStyle}"
                      ItemsSource="{Binding DetailLines}" />
         </Border>
 
@@ -77,16 +75,17 @@
                     HorizontalAlignment="Right"
                     Orientation="Horizontal">
             <Button Width="120"
-                    Height="32"
+                    Style="{StaticResource ModernDialogSecondaryButtonStyle}"
                     Margin="0,0,8,0"
                     Command="{Binding OpenErrorLogDirectoryCommand}"
                     Content="打开日志目录"
                     Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <Button Width="80"
-                    Height="32"
+                    Style="{StaticResource ModernDialogPrimaryButtonStyle}"
                     Command="{Binding CloseCommand}"
                     Content="关闭"
                     Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}" />
         </StackPanel>
     </Grid>
+    </Border>
 </Window>

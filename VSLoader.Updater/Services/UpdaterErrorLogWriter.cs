@@ -5,6 +5,8 @@ namespace VSLoader.Updater.Services;
 
 public sealed class UpdaterErrorLogWriter
 {
+    private const string ErrorLogFileName = "updater-error.log";
+
     private readonly string errorLogRoot;
 
     public UpdaterErrorLogWriter(string? errorLogRoot = null)
@@ -17,7 +19,7 @@ public sealed class UpdaterErrorLogWriter
     public string WriteStartupError(string[] args, Exception exception)
     {
         Directory.CreateDirectory(errorLogRoot);
-        var logPath = Path.Combine(errorLogRoot, $"{DateTime.Now:yyyyMMdd_HHmmss_fff}.log");
+        var logPath = Path.Combine(errorLogRoot, ErrorLogFileName);
         var builder = new StringBuilder();
         builder.AppendLine($"Time: {DateTime.Now:O}");
         builder.AppendLine("Source: VSLoader.Updater startup");
@@ -30,7 +32,7 @@ public sealed class UpdaterErrorLogWriter
         builder.AppendLine();
         builder.AppendLine("Exception:");
         builder.AppendLine(exception.ToString());
-        File.WriteAllText(logPath, builder.ToString());
+        RollingLogFileWriter.Append(logPath, builder.ToString());
         return logPath;
     }
 }

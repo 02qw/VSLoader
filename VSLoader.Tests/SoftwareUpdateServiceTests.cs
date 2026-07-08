@@ -48,6 +48,40 @@ public sealed class SoftwareUpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CheckAvailabilityAsync_returns_preflight_failure_when_manifest_unc_host_is_unreachable()
+    {
+        var service = new SoftwareUpdateService(new PathAccessPreflightService(
+            (_, _, _) => Task.FromResult(false),
+            _ => true,
+            _ => throw new InvalidOperationException("manifest should not be checked")));
+
+        var result = await service.CheckAvailabilityAsync(@"\\192.168.15.69\release\manifest.json", new Version(1, 0));
+
+        Assert.False(result.Success);
+        Assert.Contains("网络连接失败", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task PrepareUpdateAsync_returns_preflight_failure_when_package_unc_host_is_unreachable()
+    {
+        var manifestPath = WriteManifest(new SoftwareUpdateManifest
+        {
+            Version = "2.0.2",
+            PackageFile = @"\\192.168.15.69\release\update.zip",
+            Sha256 = "hash"
+        });
+        var service = new SoftwareUpdateService(new PathAccessPreflightService(
+            (host, _, _) => Task.FromResult(!string.Equals(host, "192.168.15.69", StringComparison.OrdinalIgnoreCase)),
+            _ => true,
+            path => !path.StartsWith(@"\\192.168.15.69\", StringComparison.OrdinalIgnoreCase)));
+
+        var result = await service.PrepareUpdateAsync(CreateRequest(manifestPath));
+
+        Assert.False(result.Success);
+        Assert.Contains("网络连接失败", result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task PrepareUpdateAsync_returns_failure_when_manifest_json_is_broken()
     {
         var manifestPath = Path.Combine(_rootPath, "manifest.json");

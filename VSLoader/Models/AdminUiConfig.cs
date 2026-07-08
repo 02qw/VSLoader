@@ -20,6 +20,18 @@ public sealed class AdminUiConfig
 
     public string ProtectedPassword { get; set; } = string.Empty;
 
+    public bool AutoPastePasswordEnabled { get; set; } = true;
+
+    public int AutoPasteTimeoutSeconds { get; set; } = 12;
+
+    public int AutoPasteInitialDelayMilliseconds { get; set; } = 0;
+
+    public int AutoPastePollIntervalMilliseconds { get; set; } = 50;
+
+    public string AutoPasteWindowTitleKeyword { get; set; } = "processor";
+
+    public string AutoPasteProcessNames { get; set; } = "java;javaw;javaws";
+
     public AdminUiConfig Clone()
     {
         return new AdminUiConfig
@@ -32,7 +44,13 @@ public sealed class AdminUiConfig
             PortKey = PortKey,
             ServiceNameKey = ServiceNameKey,
             IgnoreCertificateErrors = IgnoreCertificateErrors,
-            ProtectedPassword = ProtectedPassword
+            ProtectedPassword = ProtectedPassword,
+            AutoPastePasswordEnabled = AutoPastePasswordEnabled,
+            AutoPasteTimeoutSeconds = AutoPasteTimeoutSeconds,
+            AutoPasteInitialDelayMilliseconds = AutoPasteInitialDelayMilliseconds,
+            AutoPastePollIntervalMilliseconds = AutoPastePollIntervalMilliseconds,
+            AutoPasteWindowTitleKeyword = AutoPasteWindowTitleKeyword,
+            AutoPasteProcessNames = AutoPasteProcessNames
         };
     }
 }

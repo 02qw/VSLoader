@@ -76,6 +76,12 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         };
         var dialogService = new RecordingDialogService();
         var viewModel = CreateViewModel(appSettings, dialogService);
+        var detectedUpdate = new UpdateCheckResult
+        {
+            DetectedSoftwareVersion = "99.0.0"
+        };
+        detectedUpdate.UpdatedItems.Add("软件版本");
+        viewModel.ApplyUpdateCheckResult(detectedUpdate);
         var startedUpdater = false;
         var exitRequested = false;
         viewModel.StartUpdater = (_, _) => startedUpdater = true;
@@ -87,6 +93,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         Assert.False(exitRequested);
         Assert.Empty(dialogService.ConfirmMessages);
         Assert.Contains(dialogService.Infos, message => message.Contains("当前已是最新版本", StringComparison.Ordinal));
+        Assert.False(viewModel.HasSoftwareUpdateNotice);
         Assert.False(viewModel.IsBusy);
     }
 

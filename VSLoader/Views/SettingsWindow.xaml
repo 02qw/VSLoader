@@ -1,43 +1,73 @@
 <Window x:Class="VSLoader.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:chromeControls="clr-namespace:VSLoader.Views.Controls"
+        xmlns:behaviors="clr-namespace:VSLoader.Behaviors"
         Title="设置"
         Icon="pack://application:,,,/Assets/tomato.ico"
         Height="720"
         Width="760"
         MinHeight="520"
         MinWidth="680"
+        WindowStyle="None"
         WindowStartupLocation="CenterOwner">
-    <DockPanel Margin="16">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="44"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Border Background="{StaticResource ModernAppBackgroundBrush}"
+            BorderBrush="{StaticResource ModernWindowOuterBorderBrush}"
+            BorderThickness="1"
+            SnapsToDevicePixels="True">
+    <Grid Background="{StaticResource ModernAppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <chromeControls:ModernTitleBar Grid.Row="0" />
+        <DockPanel Grid.Row="1" Margin="0" Background="{StaticResource ModernAppBackgroundBrush}">
         <StackPanel DockPanel.Dock="Bottom"
-                    Margin="0,16,0,0"
+                    Margin="18,6,18,18"
                     HorizontalAlignment="Right"
                     Orientation="Horizontal">
-            <Button Width="88"
+            <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                    Width="88"
                     Margin="0,0,8,0"
                     Command="{Binding SaveCommand}"
                     Content="保存" />
-            <Button Width="88"
+            <Button Style="{StaticResource ModernButtonStyle}"
+                    Width="88"
                     Command="{Binding CancelCommand}"
                     Content="取消" />
         </StackPanel>
 
         <ScrollViewer x:Name="SettingsScrollViewer"
+                      Margin="18,18,18,0"
+                      behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                      behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                      behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                      PanningMode="VerticalOnly"
                       VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <GroupBox Header="VSCode" Padding="12" Margin="0,0,0,12">
+                <GroupBox Header="VSCode" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBox Grid.Column="0"
+                                 Style="{StaticResource ModernTextBoxStyle}"
                                  Height="34"
                                  Padding="8,6"
                                  VerticalContentAlignment="Center"
                                  PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
                                  Text="{Binding VSCodePath, UpdateSourceTrigger=PropertyChanged}" />
                         <Button Grid.Column="1"
+                                Style="{StaticResource ModernButtonStyle}"
                                 Width="80"
                                 Margin="8,0,0,0"
                                 Command="{Binding BrowseExeCommand}"
@@ -45,9 +75,12 @@
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="AdminUI" Padding="12" Margin="0,0,0,12">
+                <GroupBox Header="AdminUI" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -63,34 +96,50 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="BaseUrl" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Host" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.Host, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.Host, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="RoleName" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.RoleName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.RoleName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="Properties 文件名" />
-                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="实例名字段" />
-                        <TextBox Grid.Row="4" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="4" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="端口字段" />
-                        <TextBox Grid.Row="5" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.PortKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="5" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.PortKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Text="服务名字段" />
-                        <TextBox Grid.Row="6" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.ServiceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="6" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.ServiceNameKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <CheckBox Grid.Row="7"
+                                  Style="{StaticResource ModernCheckBoxStyle}"
                                   Grid.Column="1"
                                   VerticalAlignment="Center"
+                                  Margin="0,0,0,8"
                                   Content="忽略 HTTPS 证书错误"
                                   IsChecked="{Binding AdminUi.IgnoreCertificateErrors, Mode=TwoWay}" />
+
+                        <CheckBox Grid.Row="8"
+                                  Style="{StaticResource ModernCheckBoxStyle}"
+                                  Grid.Column="1"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,0,8"
+                                  Content="自动粘贴密码并回车"
+                                  IsChecked="{Binding AdminUi.AutoPastePasswordEnabled, Mode=TwoWay}" />
+
+                        <TextBlock Grid.Row="9" Grid.Column="0" VerticalAlignment="Center" Text="登录窗口标题关键字" />
+                        <TextBox Grid.Row="9" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" ToolTip="用于识别 AdminUI 登录弹窗，例如 TAOI008.processor 可填写 processor。" Text="{Binding AdminUi.AutoPasteWindowTitleKeyword, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <TextBlock Grid.Row="10" Grid.Column="0" VerticalAlignment="Center" Text="等待超时秒数" />
+                        <TextBox Grid.Row="10" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding AdminUi.AutoPasteTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="AdminUI 密码" Padding="12" Margin="0,0,0,12">
+                <GroupBox Header="AdminUI 密码" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="170" />
@@ -100,17 +149,15 @@
                         <TextBlock Grid.Column="0"
                                    VerticalAlignment="Center"
                                    Text="登录密码" />
-                        <PasswordBox x:Name="AdminUiPasswordBox"
-                                     Grid.Column="1"
-                                     Height="30"
-                                     VerticalContentAlignment="Center"
-                                     Padding="8,4"
-                                     PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
-                                     PasswordChanged="AdminUiPasswordBox_PasswordChanged" />
+                        <TextBox Grid.Column="1"
+                                 Style="{StaticResource ModernTextBoxStyle}"
+                                 Height="34"
+                                 PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                 Text="{Binding AdminUiPassword, UpdateSourceTrigger=PropertyChanged}" />
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="WebUI" Padding="12" Margin="0,0,0,12">
+                <GroupBox Header="WebUI" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -124,20 +171,20 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="BaseUrl" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.BaseUrl, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Properties 文件名" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.InstancePropertiesName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="实例名字段" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Height="30" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Margin="0,0,0,8" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.InstanceNameKey, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="SSL 端口字段" />
-                        <TextBox Grid.Row="3" Grid.Column="1" Height="30" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.SslPortKey, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" PreviewMouseWheel="SettingsInput_PreviewMouseWheel" Text="{Binding WebUi.SslPortKey, UpdateSourceTrigger=PropertyChanged}" />
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="软件更新" Padding="12" Margin="0,0,0,12">
+                <GroupBox Header="软件更新" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="170" />
@@ -149,12 +196,14 @@
                                    VerticalAlignment="Center"
                                    Text="manifest 路径" />
                         <TextBox Grid.Column="1"
-                                 Height="30"
+                                 Style="{StaticResource ModernTextBoxStyle}"
+                                 Height="34"
                                  Padding="8,4"
                                  VerticalContentAlignment="Center"
                                  PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
                                  Text="{Binding SoftwareUpdateManifestPath, UpdateSourceTrigger=PropertyChanged}" />
                         <Button Grid.Column="2"
+                                Style="{StaticResource ModernButtonStyle}"
                                 Width="72"
                                 Margin="8,0,0,0"
                                 Command="{Binding BrowseSoftwareUpdateManifestCommand}"
@@ -162,10 +211,9 @@
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="更新检测" Padding="12" Margin="0,0,0,12">
+                <GroupBox Header="更新检测" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
@@ -174,43 +222,74 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="rules 批量配置文件" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="全局配置包路径" />
                         <TextBox Grid.Row="0"
                                  Grid.Column="1"
-                                 Height="30"
-                                 Margin="0,0,0,8"
+                                 Style="{StaticResource ModernTextBoxStyle}"
+                                 Height="34"
                                  Padding="8,4"
                                  VerticalContentAlignment="Center"
                                  PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
-                                 Text="{Binding UpdateCheck.RulesFilePath, UpdateSourceTrigger=PropertyChanged}" />
+                                 Text="{Binding UpdateCheck.GlobalConfigPackagePath, UpdateSourceTrigger=PropertyChanged}" />
                         <Button Grid.Row="0"
                                 Grid.Column="2"
+                                Style="{StaticResource ModernButtonStyle}"
                                 Width="72"
-                                Margin="8,0,0,8"
-                                Command="{Binding BrowseRulesFileCommand}"
-                                Content="浏览" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="map 地图配置文件" />
-                        <TextBox Grid.Row="1"
-                                 Grid.Column="1"
-                                 Height="30"
-                                 Margin="0,0,0,8"
-                                 Padding="8,4"
-                                 VerticalContentAlignment="Center"
-                                 PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
-                                 Text="{Binding UpdateCheck.MapFilePath, UpdateSourceTrigger=PropertyChanged}" />
-                        <Button Grid.Row="1"
-                                Grid.Column="2"
-                                Width="72"
-                                Margin="8,0,0,8"
-                                Command="{Binding BrowseMapFileCommand}"
+                                Margin="8,0,0,0"
+                                Command="{Binding BrowseGlobalConfigPackageCommand}"
                                 Content="浏览" />
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="程序快捷键" Padding="12">
+                <GroupBox Header="地图快捷键" Style="{StaticResource ModernGroupBoxStyle}">
+                    <StackPanel>
+                        <TextBlock Margin="0,0,0,10"
+                                   Foreground="#64748B"
+                                   FontSize="12"
+                                   Text="只要 VSLoader 正在运行就生效，用于打开、恢复、激活或最小化地图。" />
+                        <CheckBox Margin="0,0,0,10"
+                                  Style="{StaticResource ModernCheckBoxStyle}"
+                                  Content="启用地图快捷键"
+                                  IsChecked="{Binding MapHotkey.Enabled, Mode=TwoWay}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       VerticalAlignment="Center"
+                                       Text="地图快捷键" />
+                            <TextBox Grid.Column="1"
+                                     Style="{StaticResource ModernReadOnlyTextBoxStyle}"
+                                     Height="34"
+                                     Padding="8,4"
+                                     VerticalContentAlignment="Center"
+                                     IsReadOnly="True"
+                                     PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                     Text="{Binding MapHotkeyDisplayText}" />
+                            <Button Grid.Column="2"
+                                    Style="{StaticResource ModernButtonStyle}"
+                                    Width="72"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding StartRecordMapHotkeyCommand}"
+                                    Content="录制" />
+                            <Button Grid.Column="3"
+                                    Style="{StaticResource ModernButtonStyle}"
+                                    Width="72"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding ClearMapHotkeyCommand}"
+                                    Content="清除" />
+                        </Grid>
+                    </StackPanel>
+                </GroupBox>
+
+                <GroupBox Header="程序快捷键" Style="{StaticResource ModernGroupBoxStyle}">
                     <StackPanel>
                         <CheckBox Margin="0,0,0,10"
+                                  Style="{StaticResource ModernCheckBoxStyle}"
                                   Content="启用快捷键"
                                   IsChecked="{Binding Hotkey.Enabled, Mode=TwoWay}" />
                         <Grid>
@@ -225,18 +304,21 @@
                                        VerticalAlignment="Center"
                                        Text="快捷键" />
                             <TextBox Grid.Column="1"
-                                     Height="30"
+                                     Style="{StaticResource ModernReadOnlyTextBoxStyle}"
+                                     Height="34"
                                      Padding="8,4"
                                      VerticalContentAlignment="Center"
                                      IsReadOnly="True"
                                      PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
                                      Text="{Binding HotkeyDisplayText}" />
                             <Button Grid.Column="2"
+                                    Style="{StaticResource ModernButtonStyle}"
                                     Width="72"
                                     Margin="8,0,0,0"
                                     Command="{Binding StartRecordHotkeyCommand}"
                                     Content="录制" />
                             <Button Grid.Column="3"
+                                    Style="{StaticResource ModernButtonStyle}"
                                     Width="72"
                                     Margin="8,0,0,0"
                                     Command="{Binding ClearHotkeyCommand}"
@@ -246,5 +328,8 @@
                 </GroupBox>
             </StackPanel>
         </ScrollViewer>
-    </DockPanel>
+        </DockPanel>
+    </Grid>
+    </Border>
 </Window>
+

@@ -5,6 +5,8 @@ namespace VSLoader.Updater.Services;
 
 public sealed class UpdaterApplyService
 {
+    private const string ErrorLogFileName = "updater-error.log";
+
     private readonly string errorLogRoot;
     private readonly Func<string, bool>? shouldFailCopy;
 
@@ -144,7 +146,7 @@ public sealed class UpdaterApplyService
     private string WriteErrorLog(UpdaterOptions options, string step, Exception exception, Exception? rollbackException)
     {
         Directory.CreateDirectory(errorLogRoot);
-        var logPath = Path.Combine(errorLogRoot, $"{DateTime.Now:yyyyMMdd_HHmmss_fff}.log");
+        var logPath = Path.Combine(errorLogRoot, ErrorLogFileName);
         var builder = new StringBuilder();
         builder.AppendLine($"Time: {DateTime.Now:O}");
         builder.AppendLine($"Step: {step}");
@@ -161,7 +163,7 @@ public sealed class UpdaterApplyService
             builder.AppendLine(rollbackException.ToString());
         }
 
-        File.WriteAllText(logPath, builder.ToString());
+        RollingLogFileWriter.Append(logPath, builder.ToString());
         return logPath;
     }
 }

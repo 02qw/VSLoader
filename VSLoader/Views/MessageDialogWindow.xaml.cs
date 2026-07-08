@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace VSLoader.Views;
@@ -36,6 +37,8 @@ public partial class MessageDialogWindow : Window
         NoButton.Visibility = kind == MessageDialogKind.Confirm ? Visibility.Visible : Visibility.Collapsed;
 
         DataContext = this;
+        DialogTitleBar.CloseRequested += (_, _) => CancelDialog();
+        PreviewKeyDown += MessageDialogWindow_PreviewKeyDown;
     }
 
     public string Message { get; }
@@ -47,6 +50,11 @@ public partial class MessageDialogWindow : Window
     public System.Windows.Media.Brush IconBackground { get; }
 
     public bool Confirmed { get; private set; }
+
+    public static bool ShouldConfirmOnClose(MessageDialogKind kind)
+    {
+        return false;
+    }
 
     private void OkButton_Click(object sender, RoutedEventArgs e)
     {
@@ -63,7 +71,23 @@ public partial class MessageDialogWindow : Window
 
     private void NoButton_Click(object sender, RoutedEventArgs e)
     {
-        Confirmed = false;
+        CancelDialog();
+    }
+
+    private void MessageDialogWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        CancelDialog();
+    }
+
+    private void CancelDialog()
+    {
+        Confirmed = ShouldConfirmOnClose(Kind);
         DialogResult = false;
         Close();
     }

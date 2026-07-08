@@ -1,17 +1,42 @@
 <Window x:Class="VSLoader.Views.BatchImportWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:chromeControls="clr-namespace:VSLoader.Views.Controls"
+        xmlns:behaviors="clr-namespace:VSLoader.Behaviors"
         Title="批量新增识别"
         Icon="pack://application:,,,/Assets/tomato.ico"
         Height="680"
         MinHeight="560"
         Width="1120"
         MinWidth="920"
+        WindowStyle="None"
         WindowStartupLocation="CenterOwner">
-    <Grid Background="#F6F7F9">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="44"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Border Background="{StaticResource ModernAppBackgroundBrush}"
+            BorderBrush="{StaticResource ModernWindowOuterBorderBrush}"
+            BorderThickness="1"
+            SnapsToDevicePixels="True">
+    <Grid Background="{StaticResource ModernAppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <chromeControls:ModernTitleBar Grid.Row="0" />
+        <Grid Grid.Row="1">
+
         <DockPanel Margin="16"
                    IsEnabled="{Binding IsNotBusy}">
-        <Grid DockPanel.Dock="Top">
+        <Border DockPanel.Dock="Top"
+                Margin="0,0,0,4"
+                Style="{StaticResource ModernSectionBorderStyle}">
+        <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -29,12 +54,14 @@
                        Text="目标父级文件夹" />
             <TextBox Grid.Row="0"
                      Grid.Column="1"
+                     Style="{StaticResource ModernTextBoxStyle}"
                      Height="34"
                      Padding="8,6"
                      VerticalContentAlignment="Center"
                      Text="{Binding ParentFolderPath, UpdateSourceTrigger=PropertyChanged}" />
             <Button Grid.Row="0"
                     Grid.Column="2"
+                    Style="{StaticResource ModernButtonStyle}"
                     Width="96"
                     Margin="8,0,0,0"
                     Command="{Binding BrowseParentFolderCommand}"
@@ -47,6 +74,7 @@
                        Text="CSV 规则文件" />
             <TextBox Grid.Row="1"
                      Grid.Column="1"
+                     Style="{StaticResource ModernTextBoxStyle}"
                      Height="34"
                      Margin="0,10,0,0"
                      Padding="8,6"
@@ -54,6 +82,7 @@
                      Text="{Binding CsvPath, UpdateSourceTrigger=PropertyChanged}" />
             <Button Grid.Row="1"
                     Grid.Column="2"
+                    Style="{StaticResource ModernButtonStyle}"
                     Width="96"
                     Margin="8,10,0,0"
                     Command="{Binding BrowseCsvCommand}"
@@ -63,7 +92,8 @@
                         Grid.ColumnSpan="3"
                         Margin="0,12,0,0"
                         Orientation="Horizontal">
-                <Button Width="110"
+                <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                        Width="110"
                         Height="34"
                         Command="{Binding ScanPreviewCommand}"
                         Content="扫描预览" />
@@ -75,26 +105,30 @@
                 <TextBlock Margin="16,8,0,0" Text="{Binding RuleErrorCount, StringFormat=规则错误: {0}}" />
             </StackPanel>
         </Grid>
+        </Border>
 
         <StackPanel DockPanel.Dock="Bottom"
                     Margin="0,12,0,0"
                     HorizontalAlignment="Right"
                     Orientation="Horizontal">
-            <Button Width="100"
+            <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                    Width="100"
                     Margin="0,0,8,0"
                     Command="{Binding ConfirmImportCommand}"
                     Content="确认新增" />
-            <Button Width="88"
+            <Button Style="{StaticResource ModernButtonStyle}"
+                    Width="88"
                     Command="{Binding CancelCommand}"
                     Content="取消" />
         </StackPanel>
 
         <Border Margin="0,12,0,0"
-                Background="White"
-                BorderBrush="#DDE1E7"
+                Background="{StaticResource ModernSurfaceBrush}"
+                BorderBrush="{StaticResource ModernSurfaceBorderBrush}"
                 BorderThickness="1"
-                CornerRadius="6">
-            <DataGrid AutoGenerateColumns="False"
+                CornerRadius="8">
+            <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                      AutoGenerateColumns="False"
                       CanUserAddRows="False"
                       CanUserDeleteRows="False"
                       GridLinesVisibility="Horizontal"
@@ -102,7 +136,24 @@
                       IsReadOnly="False"
                       ItemsSource="{Binding PreviewItems}"
                       RowHeaderWidth="0"
+                      behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                      behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="True"
+                      behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                      ScrollViewer.PanningMode="Both"
+                      ScrollViewer.PanningRatio="1"
+                      ScrollViewer.PanningDeceleration="0.001"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                       SelectionMode="Single">
+                <DataGrid.ColumnHeaderStyle>
+                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource ModernDataGridColumnHeaderStyle}" />
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.CellStyle>
+                    <Style TargetType="DataGridCell" BasedOn="{StaticResource ModernDataGridCellStyle}" />
+                </DataGrid.CellStyle>
+                <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRowStyle}" />
+                </DataGrid.RowStyle>
                 <DataGrid.Columns>
                     <DataGridCheckBoxColumn Width="82"
                                             Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -137,14 +188,15 @@
         </Border>
         </DockPanel>
 
-        <Grid Background="#99000000"
+        <Grid Background="#660F172A"
               Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Width="420"
+            <Border Style="{StaticResource ModernBusyPanelStyle}"
+                    Width="420"
                     Padding="22"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Background="White"
-                    BorderBrush="#D1D5DB"
+                    Background="{StaticResource ModernSurfaceBrush}"
+                    BorderBrush="{StaticResource ModernSurfaceBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="8">
                 <StackPanel>
@@ -154,7 +206,7 @@
                                Foreground="#111827"
                                Text="{Binding BusyMessage}"
                                TextAlignment="Center" />
-                    <ProgressBar Height="10"
+                    <ProgressBar Style="{StaticResource ModernProgressBarStyle}"
                                  Margin="0,18,0,0"
                                  Maximum="{Binding BusyProgressMaximum}"
                                  Value="{Binding BusyProgressValue}" />
@@ -174,5 +226,7 @@
                 </StackPanel>
             </Border>
         </Grid>
+            </Grid>
     </Grid>
+    </Border>
 </Window>

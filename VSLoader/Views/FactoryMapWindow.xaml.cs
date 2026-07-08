@@ -1,11 +1,13 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using VSLoader.Models;
 using VSLoader.Services;
+using VSLoader.ViewModels;
 using WpfBrushes = System.Windows.Media.Brushes;
 using WpfButton = System.Windows.Controls.Button;
 using WpfColor = System.Windows.Media.Color;
@@ -18,6 +20,8 @@ using WpfPoint = System.Windows.Point;
 using WpfRect = System.Windows.Rect;
 using WpfRectangle = System.Windows.Shapes.Rectangle;
 using WpfHorizontalAlignment = System.Windows.HorizontalAlignment;
+using DrawingRectangle = System.Drawing.Rectangle;
+using WinForms = System.Windows.Forms;
 
 namespace VSLoader.Views;
 
@@ -25,12 +29,16 @@ public partial class FactoryMapWindow : Window
 {
     private const double DeviceWidth = 150;
     private const double DeviceHeight = 58;
+    internal const double EdgeEndpointInset = 3;
     private const double DragThreshold = 4;
     private const double SnapGridSize = 10;
     private const double ViewPadding = 28;
+    private const double EditCanvasBuffer = 500;
+    private const double MajorGridMultiplier = 5;
     private const double ZoomFactor = 1.1;
     private const double MinUserScale = 0.5;
     private const double MaxUserScale = 4.0;
+    private const int MaxGridLineCount = 2000;
     private const int MaxFitRetryCount = 12;
     private static readonly string MapDebugLogPath = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -58,6 +66,7 @@ public partial class FactoryMapWindow : Window
     private bool isSelectingNodes;
     private bool hasDeviceDragStarted;
     private bool hasUserViewState;
+    private bool isApplyingMaximizedWorkingArea;
     private bool pendingFitToView;
     private int fitRetryCount;
     private Border? activeDeviceElement;
@@ -93,8 +102,10 @@ public partial class FactoryMapWindow : Window
         this.downloadAdminUiLinks = downloadAdminUiLinks ?? (() => { });
         this.mapImported = mapImported;
         InitializeComponent();
+        MapTitleBar.CloseRequested += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
         Loaded += (_, _) => RequestFitMapToView();
         ContentRendered += (_, _) => RequestFitMapToView();
+        StateChanged += FactoryMapWindow_StateChanged;
         Focusable = true;
         PreviewKeyDown += FactoryMapWindow_PreviewKeyDown;
         ResetMapDebugLog();
@@ -103,11 +114,92 @@ public partial class FactoryMapWindow : Window
 
     public event EventHandler? ViewStateChanged;
 
+    public event EventHandler? CloseRequested;
+
     public bool HasUserViewState => hasUserViewState;
+
+    internal static double DeviceNodeWidth => DeviceWidth;
+
+    internal static double MapGridSize => SnapGridSize;
+
+    internal static double MapMajorGridSize => SnapGridSize * MajorGridMultiplier;
 
     internal static bool ShouldInvokeDownloadAdminUiLinks(bool canExecute)
     {
         return canExecute;
+    }
+
+    private void FactoryMapWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            ApplyMaximizedWorkingArea();
+            return;
+        }
+
+        ClearMaximizedWorkingAreaConstraint();
+    }
+
+    private void ApplyMaximizedWorkingArea()
+    {
+        if (isApplyingMaximizedWorkingArea)
+        {
+            return;
+        }
+
+        isApplyingMaximizedWorkingArea = true;
+        try
+        {
+            var workingArea = ConvertScreenBoundsToDip(GetCurrentScreenWorkingArea());
+            MaxWidth = workingArea.Width;
+            MaxHeight = workingArea.Height;
+            Left = workingArea.Left;
+            Top = workingArea.Top;
+            Width = workingArea.Width;
+            Height = workingArea.Height;
+        }
+        finally
+        {
+            isApplyingMaximizedWorkingArea = false;
+        }
+    }
+
+    private void ClearMaximizedWorkingAreaConstraint()
+    {
+        MaxWidth = double.PositiveInfinity;
+        MaxHeight = double.PositiveInfinity;
+    }
+
+    private DrawingRectangle GetCurrentScreenWorkingArea()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        return handle == IntPtr.Zero
+            ? WinForms.Screen.PrimaryScreen?.WorkingArea ?? WinForms.Screen.AllScreens[0].WorkingArea
+            : WinForms.Screen.FromHandle(handle).WorkingArea;
+    }
+
+    private WpfRect ConvertScreenBoundsToDip(DrawingRectangle bounds)
+    {
+        var source = PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget is null)
+        {
+            return new WpfRect(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+        }
+
+        var transform = source.CompositionTarget.TransformFromDevice;
+        var topLeft = transform.Transform(new WpfPoint(bounds.Left, bounds.Top));
+        var bottomRight = transform.Transform(new WpfPoint(bounds.Right, bounds.Bottom));
+        return new WpfRect(topLeft, bottomRight);
+    }
+
+    internal static string FormatDebugStatusText(
+        string baseText,
+        double viewportWidth,
+        double viewportHeight,
+        double scale,
+        string bounds)
+    {
+        return $"{baseText} | 视口:{viewportWidth:0}x{viewportHeight:0} | 缩放:{scale:0.###} | 边界:{bounds}";
     }
 
     public void RenderMap(FactoryMapDeviceViewData map)
@@ -194,6 +286,8 @@ public partial class FactoryMapWindow : Window
         MapCanvas.Width = canvasSize.Width;
         MapCanvas.Height = canvasSize.Height;
 
+        DrawGridIfNeeded();
+
         foreach (var edge in currentMap.Edges)
         {
             DrawEdge(edge);
@@ -231,14 +325,15 @@ public partial class FactoryMapWindow : Window
 
     private void DrawEdge(FactoryMapDeviceEdgeViewData edge)
     {
-        var points = CreateEdgePoints(edge);
+        var visiblePoints = CreateVisibleEdgePoints(edge);
+        var hitPoints = CreateEdgePoints(edge);
         var polyline = new Polyline
         {
             Stroke = new SolidColorBrush(WpfColor.FromRgb(148, 163, 184)),
             StrokeThickness = 2,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            Points = points,
+            StrokeStartLineCap = PenLineCap.Flat,
+            StrokeEndLineCap = PenLineCap.Flat,
+            Points = visiblePoints,
             Tag = edge
         };
 
@@ -250,11 +345,85 @@ public partial class FactoryMapWindow : Window
             StrokeThickness = 12,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
-            Points = points.Clone(),
+            Points = hitPoints,
             Tag = edge
         };
         hitPolyline.PreviewMouseRightButtonDown += Edge_PreviewMouseRightButtonDown;
         MapCanvas.Children.Add(hitPolyline);
+    }
+
+    private void DrawGridIfNeeded()
+    {
+        if (!isEditMode || MapCanvas.Width <= 0 || MapCanvas.Height <= 0)
+        {
+            return;
+        }
+
+        var gridSize = MapGridSize;
+        if (GetGridLineCount(MapCanvas.Width, MapCanvas.Height, gridSize) > MaxGridLineCount)
+        {
+            gridSize = MapMajorGridSize;
+        }
+
+        if (GetGridLineCount(MapCanvas.Width, MapCanvas.Height, gridSize) > MaxGridLineCount)
+        {
+            return;
+        }
+
+        var minorBrush = new SolidColorBrush(WpfColor.FromRgb(236, 243, 255));
+        var majorBrush = new SolidColorBrush(WpfColor.FromRgb(220, 234, 255));
+        minorBrush.Freeze();
+        majorBrush.Freeze();
+
+        for (var x = 0d; x <= MapCanvas.Width; x += gridSize)
+        {
+            MapCanvas.Children.Add(CreateGridLine(
+                x,
+                0,
+                x,
+                MapCanvas.Height,
+                IsMajorGridLine(x) ? majorBrush : minorBrush));
+        }
+
+        for (var y = 0d; y <= MapCanvas.Height; y += gridSize)
+        {
+            MapCanvas.Children.Add(CreateGridLine(
+                0,
+                y,
+                MapCanvas.Width,
+                y,
+                IsMajorGridLine(y) ? majorBrush : minorBrush));
+        }
+    }
+
+    private static int GetGridLineCount(double width, double height, double gridSize)
+    {
+        if (width <= 0 || height <= 0 || gridSize <= 0)
+        {
+            return 0;
+        }
+
+        return (int)(Math.Floor(width / gridSize) + Math.Floor(height / gridSize) + 2);
+    }
+
+    private static bool IsMajorGridLine(double coordinate)
+    {
+        return Math.Abs(coordinate % MapMajorGridSize) < 0.001;
+    }
+
+    private static Line CreateGridLine(double x1, double y1, double x2, double y2, System.Windows.Media.Brush brush)
+    {
+        return new Line
+        {
+            X1 = x1,
+            Y1 = y1,
+            X2 = x2,
+            Y2 = y2,
+            Stroke = brush,
+            StrokeThickness = 1,
+            IsHitTestVisible = false,
+            SnapsToDevicePixels = true
+        };
     }
 
     private void DrawDevice(FactoryMapDeviceViewNode device)
@@ -303,7 +472,7 @@ public partial class FactoryMapWindow : Window
             Width = DeviceWidth,
             Height = DeviceHeight,
             Background = WpfBrushes.White,
-            BorderBrush = new SolidColorBrush(WpfColor.FromRgb(203, 213, 225)),
+            BorderBrush = new SolidColorBrush(WpfColor.FromRgb(183, 198, 216)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Child = content,
@@ -365,9 +534,9 @@ public partial class FactoryMapWindow : Window
             Padding = new Thickness(0),
             Background = WpfBrushes.White,
             BorderBrush = new SolidColorBrush(WpfColor.FromRgb(209, 213, 219)),
-            BorderThickness = new Thickness(1),
-            Template = CreateCompactContextMenuTemplate()
+            BorderThickness = new Thickness(1)
         };
+        ApplyModernContextMenuStyle(menu);
 
         menu.Items.Add(CreateDeviceMenuItem("VSCode", device, FactoryMapShortcutAction.OpenVsCode));
         menu.Items.Add(CreateDeviceMenuItem("AdminUI", device, FactoryMapShortcutAction.OpenAdminUi));
@@ -388,9 +557,9 @@ public partial class FactoryMapWindow : Window
             Padding = new Thickness(14, 8, 14, 8),
             Foreground = new SolidColorBrush(WpfColor.FromRgb(17, 24, 39)),
             Background = WpfBrushes.Transparent,
-            Template = CreateCompactMenuItemTemplate(),
             Tag = new DeviceContextMenuPayload(device, action)
         };
+        ApplyModernMenuItemStyle(item, isDanger: action == FactoryMapShortcutAction.Delete);
 
         item.Click += DeviceMenuItem_Click;
         return item;
@@ -461,9 +630,25 @@ public partial class FactoryMapWindow : Window
 
     private static PointCollection CreateEdgePoints(FactoryMapDeviceEdgeViewData edge)
     {
+        return CreateEdgePoints(edge, insetEndpoints: false);
+    }
+
+    internal static PointCollection CreateVisibleEdgePoints(FactoryMapDeviceEdgeViewData edge)
+    {
+        return CreateEdgePoints(edge, insetEndpoints: true);
+    }
+
+    private static PointCollection CreateEdgePoints(FactoryMapDeviceEdgeViewData edge, bool insetEndpoints)
+    {
         var points = new PointCollection();
         var start = GetDeviceRightCenter(edge.From);
         var end = GetDeviceLeftCenter(edge.To);
+        if (insetEndpoints)
+        {
+            start.X -= EdgeEndpointInset;
+            end.X += EdgeEndpointInset;
+        }
+
         var middleX = start.X + (end.X - start.X) / 2;
         points.Add(start);
         points.Add(new WpfPoint(middleX, start.Y));
@@ -482,8 +667,8 @@ public partial class FactoryMapWindow : Window
             Padding = new Thickness(14, 8, 14, 8),
             Foreground = new SolidColorBrush(WpfColor.FromRgb(17, 24, 39)),
             Background = WpfBrushes.Transparent,
-            Template = CreateCompactMenuItemTemplate()
         };
+        ApplyModernMenuItemStyle(deleteItem, isDanger: true);
         deleteItem.Click += DeleteEdge_Click;
 
         var menu = new ContextMenu
@@ -491,9 +676,9 @@ public partial class FactoryMapWindow : Window
             Padding = new Thickness(0),
             Background = WpfBrushes.White,
             BorderBrush = new SolidColorBrush(WpfColor.FromRgb(209, 213, 219)),
-            BorderThickness = new Thickness(1),
-            Template = CreateCompactContextMenuTemplate()
+            BorderThickness = new Thickness(1)
         };
+        ApplyModernContextMenuStyle(menu);
         menu.Items.Add(deleteItem);
         return menu;
     }
@@ -515,6 +700,31 @@ public partial class FactoryMapWindow : Window
         menu.PlacementTarget = polyline;
         menu.IsOpen = true;
         e.Handled = true;
+    }
+
+    private static void ApplyModernContextMenuStyle(ContextMenu menu)
+    {
+        if (System.Windows.Application.Current.TryFindResource("ModernContextMenuStyle") is Style style)
+        {
+            menu.Style = style;
+        }
+        else
+        {
+            menu.Template = CreateCompactContextMenuTemplate();
+        }
+    }
+
+    private static void ApplyModernMenuItemStyle(MenuItem item, bool isDanger)
+    {
+        var styleKey = isDanger ? "ModernDangerMenuItemStyle" : "ModernMenuItemStyle";
+        if (System.Windows.Application.Current.TryFindResource(styleKey) is Style style)
+        {
+            item.Style = style;
+        }
+        else
+        {
+            item.Template = CreateCompactMenuItemTemplate();
+        }
     }
 
     private void DeleteEdge_Click(object sender, RoutedEventArgs e)
@@ -612,6 +822,12 @@ public partial class FactoryMapWindow : Window
         UpdateEditModeVisual();
         UpdateConnectModeVisual();
         UpdateMultiSelectModeVisual();
+        RenderCurrentMap(resetView: false);
+        if (!isEditMode)
+        {
+            hasUserViewState = false;
+            RequestFitMapToView();
+        }
     }
 
     private void ConnectModeButton_Click(object sender, RoutedEventArgs e)
@@ -1379,6 +1595,30 @@ public partial class FactoryMapWindow : Window
         device.Y = FactoryMapEditMath.ClampAndSnapToGrid(device.Y, SnapGridSize);
     }
 
+    internal static WpfRect ToSquareBounds(WpfRect bounds)
+    {
+        if (bounds.IsEmpty)
+        {
+            return bounds;
+        }
+
+        var side = Math.Max(bounds.Width, bounds.Height);
+        var centerX = bounds.Left + bounds.Width / 2;
+        var centerY = bounds.Top + bounds.Height / 2;
+        return new WpfRect(centerX - side / 2, centerY - side / 2, side, side);
+    }
+
+    internal static (double Width, double Height) CalculateMapCanvasSize(
+        double baseWidth,
+        double baseHeight,
+        double contentRight,
+        double contentBottom,
+        bool isEditMode)
+    {
+        var buffer = isEditMode ? EditCanvasBuffer : ViewPadding;
+        return (Math.Max(baseWidth, contentRight + buffer), Math.Max(baseHeight, contentBottom + buffer));
+    }
+
     private bool FitMapToView()
     {
         if (!IsMapReady() || !TryGetContentBounds(out var bounds))
@@ -1390,7 +1630,7 @@ public partial class FactoryMapWindow : Window
         var fit = FactoryMapViewportFitCalculator.Calculate(
             MapViewport.ActualWidth,
             MapViewport.ActualHeight,
-            bounds,
+            isEditMode ? bounds : ToSquareBounds(bounds),
             ViewPadding);
         userScale = 1.0;
         fitScale = fit.Scale;
@@ -1471,9 +1711,9 @@ public partial class FactoryMapWindow : Window
             return (width, height);
         }
 
-        var right = currentMap.Devices.Max(device => device.X + DeviceWidth + ViewPadding);
-        var bottom = currentMap.Devices.Max(device => device.Y + DeviceHeight + ViewPadding);
-        return (Math.Max(width, right), Math.Max(height, bottom));
+        var right = currentMap.Devices.Max(device => device.X + DeviceWidth);
+        var bottom = currentMap.Devices.Max(device => device.Y + DeviceHeight);
+        return CalculateMapCanvasSize(width, height, right, bottom, isEditMode);
     }
 
     private bool TryGetContentBounds(out WpfRect bounds)
@@ -1557,7 +1797,7 @@ public partial class FactoryMapWindow : Window
     private static void ApplyDeviceNormalVisual(Border border)
     {
         border.Background = WpfBrushes.White;
-        border.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(203, 213, 225));
+        border.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(183, 198, 216));
         border.BorderThickness = new Thickness(1);
     }
 
@@ -1619,7 +1859,12 @@ public partial class FactoryMapWindow : Window
         var bounds = TryGetContentBounds(out var contentBounds)
             ? $"{contentBounds.Width:0}x{contentBounds.Height:0}"
             : "n/a";
-        StatusText.Text = $"{baseStatusText} | vp:{MapViewport.ActualWidth:0}x{MapViewport.ActualHeight:0} | scale:{GetTotalScale():0.###} | bounds:{bounds}";
+        StatusText.Text = FormatDebugStatusText(
+            baseStatusText,
+            MapViewport.ActualWidth,
+            MapViewport.ActualHeight,
+            GetTotalScale(),
+            bounds);
 #else
         StatusText.Text = baseStatusText;
 #endif
@@ -1653,7 +1898,7 @@ public partial class FactoryMapWindow : Window
                 System.IO.Directory.CreateDirectory(directory);
             }
 
-            System.IO.File.AppendAllText(MapDebugLogPath, BuildMapDebugSnapshot(stage));
+            RollingLogFileWriter.Append(MapDebugLogPath, BuildMapDebugSnapshot(stage));
         }
         catch
         {

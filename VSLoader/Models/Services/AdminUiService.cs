@@ -8,7 +8,9 @@ namespace VSLoader.Services;
 
 public sealed class AdminUiService
 {
+    private static readonly TimeSpan DefaultHttpTimeout = TimeSpan.FromSeconds(5);
     private readonly string downloadDirectory;
+    private readonly PathAccessPreflightService pathAccessPreflightService;
 
     public AdminUiService()
         : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VSLoader", "UIdownload"))
@@ -16,8 +18,14 @@ public sealed class AdminUiService
     }
 
     public AdminUiService(string downloadDirectory)
+        : this(downloadDirectory, new PathAccessPreflightService())
+    {
+    }
+
+    public AdminUiService(string downloadDirectory, PathAccessPreflightService pathAccessPreflightService)
     {
         this.downloadDirectory = downloadDirectory;
+        this.pathAccessPreflightService = pathAccessPreflightService;
     }
 
     public string DownloadDirectory
@@ -163,13 +171,37 @@ public sealed class AdminUiService
         }
     }
 
+    public async Task<LaunchResult> OpenAdminUiAsync(ShortcutItem shortcut, AdminUiConfig config)
+    {
+        try
+        {
+            var info = await ResolveShortcutInfoAsync(shortcut, config);
+            if (!File.Exists(info.LocalJnlpPath))
+            {
+                return LaunchResult.Fail("未找到对应 AdminUI 文件，请先点击“自动获取连接”。");
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = info.LocalJnlpPath,
+                UseShellExecute = true
+            });
+
+            return LaunchResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            return LaunchResult.Fail(ex.Message);
+        }
+    }
+
     private async Task<AdminUiShortcutInfo> DownloadOneCoreAsync(
         ShortcutItem shortcut,
         AdminUiConfig config,
         HttpClient httpClient,
         CancellationToken cancellationToken)
     {
-        var info = ResolveShortcutInfo(shortcut, config);
+        var info = await ResolveShortcutInfoAsync(shortcut, config);
         var tempPath = info.LocalJnlpPath + ".tmp";
 
         try
@@ -192,6 +224,20 @@ public sealed class AdminUiService
 
             throw;
         }
+    }
+
+    private async Task<AdminUiShortcutInfo> ResolveShortcutInfoAsync(ShortcutItem shortcut, AdminUiConfig config)
+    {
+        if (VSCodeLauncherService.IsNetworkPath(shortcut.TargetPath))
+        {
+            var preflight = await pathAccessPreflightService.CheckDirectoryAsync(shortcut.TargetPath);
+            if (!preflight.Success)
+            {
+                throw new InvalidOperationException(preflight.ErrorMessage ?? $"目标路径不存在或不可访问：{shortcut.TargetPath}");
+            }
+        }
+
+        return ResolveShortcutInfo(shortcut, config);
     }
 
     private AdminUiShortcutInfo ResolveShortcutInfo(ShortcutItem shortcut, AdminUiConfig config)
@@ -292,6 +338,9 @@ public sealed class AdminUiService
             handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
         }
 
-        return new HttpClient(handler);
+        return new HttpClient(handler)
+        {
+            Timeout = DefaultHttpTimeout
+        };
     }
 }

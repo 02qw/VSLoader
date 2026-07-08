@@ -6,10 +6,22 @@ namespace VSLoader.Services;
 
 public sealed class UpdateCheckService
 {
+    private readonly PathAccessPreflightService pathAccessPreflightService;
     private readonly JsonSerializerOptions jsonOptions = new()
     {
+        PropertyNameCaseInsensitive = true,
         WriteIndented = true
     };
+
+    public UpdateCheckService()
+        : this(new PathAccessPreflightService())
+    {
+    }
+
+    public UpdateCheckService(PathAccessPreflightService pathAccessPreflightService)
+    {
+        this.pathAccessPreflightService = pathAccessPreflightService;
+    }
 
     public UpdateCheckResult Check(UpdateCheckConfig config, string updateTimePath, Version currentVersion, string softwareUpdateManifestPath = "")
     {
@@ -25,22 +37,7 @@ public sealed class UpdateCheckService
         var state = loadResult.State;
         var changed = false;
 
-        changed |= CheckFile(
-            config.RulesFilePath,
-            state.Rules,
-            "批量规则文件",
-            "rules 文件不存在",
-            result,
-            value => result.DetectedRulesWriteTimeUtc = value);
-
-        changed |= CheckFile(
-            config.MapFilePath,
-            state.Map,
-            "地图配置文件",
-            "map 文件不存在",
-            result,
-            value => result.DetectedMapWriteTimeUtc = value);
-
+        changed |= CheckGlobalConfigPackage(config.GlobalConfigPackagePath, state.GlobalConfig, result);
         changed |= CheckSoftwareManifest(softwareUpdateManifestPath, state.Software, currentVersion, result);
 
         if (changed)
@@ -55,24 +52,75 @@ public sealed class UpdateCheckService
         return result;
     }
 
-    public SaveResult MarkRulesUsed(UpdateCheckConfig config, string updateTimePath)
+    public async Task<UpdateCheckResult> CheckAsync(
+        UpdateCheckConfig config,
+        string updateTimePath,
+        Version currentVersion,
+        string softwareUpdateManifestPath = "",
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(config.RulesFilePath))
+        var preflight = await CheckConfiguredFilesAsync(config, softwareUpdateManifestPath, cancellationToken);
+        var safeConfig = config.Clone();
+        var safeManifestPath = softwareUpdateManifestPath;
+
+        if (preflight.GlobalConfigFailed)
         {
-            return SaveResult.Ok();
+            safeConfig.GlobalConfigPackagePath = string.Empty;
         }
 
-        return MarkFileUsed(config.RulesFilePath, updateTimePath, state => state.Rules);
+        if (preflight.ManifestFailed)
+        {
+            safeManifestPath = string.Empty;
+        }
+
+        var result = Check(safeConfig, updateTimePath, currentVersion, safeManifestPath);
+        foreach (var failure in preflight.Failures)
+        {
+            result.Failures.Add(failure);
+        }
+
+        return result;
+    }
+
+    public SaveResult MarkRulesUsed(UpdateCheckConfig config, string updateTimePath)
+    {
+        return SaveResult.Ok();
     }
 
     public SaveResult MarkMapUsed(string mapFilePath, string updateTimePath)
     {
-        if (string.IsNullOrWhiteSpace(mapFilePath))
-        {
-            return SaveResult.Ok();
-        }
+        return SaveResult.Ok();
+    }
 
-        return MarkFileUsed(mapFilePath, updateTimePath, state => state.Map);
+    public SaveResult MarkGlobalConfigUsed(string packagePath, string updateTimePath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(packagePath))
+            {
+                return SaveResult.Ok();
+            }
+
+            if (!File.Exists(packagePath))
+            {
+                return SaveResult.Fail("全局配置包不存在，无法更新基线。");
+            }
+
+            var packageInfo = ReadGlobalConfigPackageInfo(packagePath);
+            var loadResult = LoadState(updateTimePath);
+            if (!loadResult.Success)
+            {
+                return SaveResult.Fail(loadResult.ErrorMessage ?? "updateTime.json 读取失败");
+            }
+
+            loadResult.State.GlobalConfig.LastSeenWriteTimeUtc = packageInfo.WriteTimeUtc;
+            loadResult.State.GlobalConfig.LastUsedExportedAt = packageInfo.ExportedAt;
+            return SaveState(updateTimePath, loadResult.State);
+        }
+        catch (Exception ex)
+        {
+            return SaveResult.Fail(ex.Message);
+        }
     }
 
     public SaveResult MarkSoftwareCurrent(UpdateCheckConfig config, string updateTimePath, Version currentVersion)
@@ -89,7 +137,9 @@ public sealed class UpdateCheckService
 
     public SaveResult AcknowledgeDetectedUpdates(string updateTimePath, UpdateCheckResult result)
     {
-        if (result.DetectedRulesWriteTimeUtc is null &&
+        if (result.DetectedGlobalConfigExportedAt is null &&
+            result.DetectedGlobalConfigWriteTimeUtc is null &&
+            result.DetectedRulesWriteTimeUtc is null &&
             result.DetectedMapWriteTimeUtc is null &&
             string.IsNullOrWhiteSpace(result.DetectedSoftwareVersion))
         {
@@ -100,6 +150,16 @@ public sealed class UpdateCheckService
         if (!loadResult.Success)
         {
             return SaveResult.Fail(loadResult.ErrorMessage ?? "updateTime.json 读取失败");
+        }
+
+        if (result.DetectedGlobalConfigExportedAt is not null)
+        {
+            loadResult.State.GlobalConfig.LastUsedExportedAt = result.DetectedGlobalConfigExportedAt;
+        }
+
+        if (result.DetectedGlobalConfigWriteTimeUtc is not null)
+        {
+            loadResult.State.GlobalConfig.LastSeenWriteTimeUtc = result.DetectedGlobalConfigWriteTimeUtc;
         }
 
         if (result.DetectedRulesWriteTimeUtc is not null)
@@ -118,6 +178,56 @@ public sealed class UpdateCheckService
         }
 
         return SaveState(updateTimePath, loadResult.State);
+    }
+
+    private bool CheckGlobalConfigPackage(
+        string packagePath,
+        UpdateGlobalConfigState state,
+        UpdateCheckResult result)
+    {
+        if (string.IsNullOrWhiteSpace(packagePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!File.Exists(packagePath))
+            {
+                result.Failures.Add("全局配置包文件不存在");
+                return false;
+            }
+
+            var writeTimeUtc = File.GetLastWriteTimeUtc(packagePath);
+            if (state.LastSeenWriteTimeUtc == writeTimeUtc)
+            {
+                return false;
+            }
+
+            var packageInfo = ReadGlobalConfigPackageInfo(packagePath, writeTimeUtc);
+            if (state.LastUsedExportedAt is null)
+            {
+                state.LastSeenWriteTimeUtc = packageInfo.WriteTimeUtc;
+                state.LastUsedExportedAt = packageInfo.ExportedAt;
+                return true;
+            }
+
+            if (packageInfo.ExportedAt > state.LastUsedExportedAt.Value)
+            {
+                result.UpdatedItems.Add("全局配置");
+                result.DetectedGlobalConfigExportedAt = packageInfo.ExportedAt;
+                result.DetectedGlobalConfigWriteTimeUtc = packageInfo.WriteTimeUtc;
+                return false;
+            }
+
+            state.LastSeenWriteTimeUtc = packageInfo.WriteTimeUtc;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            result.Failures.Add($"全局配置包格式无效：{ex.Message}");
+            return false;
+        }
     }
 
     private static bool CheckFile(
@@ -160,6 +270,80 @@ public sealed class UpdateCheckService
         }
 
         return false;
+    }
+
+    private async Task<UpdateCheckPreflightResult> CheckConfiguredFilesAsync(
+        UpdateCheckConfig config,
+        string softwareUpdateManifestPath,
+        CancellationToken cancellationToken)
+    {
+        var result = new UpdateCheckPreflightResult();
+
+        result.GlobalConfigFailed = await PreflightFileAsync(
+            config.GlobalConfigPackagePath,
+            "全局配置包不可访问",
+            result,
+            cancellationToken);
+
+        result.ManifestFailed = await PreflightFileAsync(
+            softwareUpdateManifestPath,
+            "软件更新 manifest 不可访问",
+            result,
+            cancellationToken);
+
+        return result;
+    }
+
+    private async Task<bool> PreflightFileAsync(
+        string filePath,
+        string label,
+        UpdateCheckPreflightResult result,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var preflight = await pathAccessPreflightService.CheckFileAsync(filePath);
+        if (!preflight.Success)
+        {
+            result.Failures.Add($"{label}：{preflight.ErrorMessage}");
+            return true;
+        }
+
+        return false;
+    }
+
+    private GlobalConfigPackageInfo ReadGlobalConfigPackageInfo(string packagePath)
+    {
+        return ReadGlobalConfigPackageInfo(packagePath, File.GetLastWriteTimeUtc(packagePath));
+    }
+
+    private GlobalConfigPackageInfo ReadGlobalConfigPackageInfo(string packagePath, DateTime writeTimeUtc)
+    {
+        var json = File.ReadAllText(packagePath);
+        var package = JsonSerializer.Deserialize<GlobalConfigPackage>(json, jsonOptions)
+            ?? throw new InvalidOperationException("内容为空。");
+
+        if (!string.Equals(package.AppName, "VSLoader", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("AppName 不是 VSLoader。");
+        }
+
+        if (package.SchemaVersion != 1)
+        {
+            throw new InvalidOperationException($"SchemaVersion 不支持：{package.SchemaVersion}。");
+        }
+
+        if (string.IsNullOrWhiteSpace(package.ExportedAt) ||
+            !DateTimeOffset.TryParse(package.ExportedAt.Trim(), out var exportedAt))
+        {
+            throw new InvalidOperationException("ExportedAt 为空或格式无效。");
+        }
+
+        return new GlobalConfigPackageInfo(exportedAt, writeTimeUtc);
     }
 
     private static bool CheckSoftwareManifest(
@@ -227,33 +411,6 @@ public sealed class UpdateCheckService
         return false;
     }
 
-    private SaveResult MarkFileUsed(
-        string filePath,
-        string updateTimePath,
-        Func<UpdateTimeState, UpdateFileState> selectState)
-    {
-        try
-        {
-            if (!File.Exists(filePath))
-            {
-                return SaveResult.Fail("文件不存在，无法更新基线。");
-            }
-
-            var loadResult = LoadState(updateTimePath);
-            if (!loadResult.Success)
-            {
-                return SaveResult.Fail(loadResult.ErrorMessage ?? "updateTime.json 读取失败");
-            }
-
-            selectState(loadResult.State).LastUsedWriteTimeUtc = File.GetLastWriteTimeUtc(filePath);
-            return SaveState(updateTimePath, loadResult.State);
-        }
-        catch (Exception ex)
-        {
-            return SaveResult.Fail(ex.Message);
-        }
-    }
-
     private UpdateTimeLoadResult LoadState(string updateTimePath)
     {
         if (!File.Exists(updateTimePath))
@@ -303,6 +460,7 @@ public sealed class UpdateCheckService
     {
         state.Rules ??= new UpdateFileState();
         state.Map ??= new UpdateFileState();
+        state.GlobalConfig ??= new UpdateGlobalConfigState();
         state.Software ??= new UpdateSoftwareState();
         state.Software.LastUsedVersion ??= string.Empty;
     }
@@ -341,4 +499,15 @@ public sealed class UpdateCheckService
             return new UpdateTimeLoadResult(new UpdateTimeState(), false, errorMessage);
         }
     }
+
+    private sealed class UpdateCheckPreflightResult
+    {
+        public List<string> Failures { get; } = [];
+
+        public bool GlobalConfigFailed { get; set; }
+
+        public bool ManifestFailed { get; set; }
+    }
+
+    private sealed record GlobalConfigPackageInfo(DateTimeOffset ExportedAt, DateTime WriteTimeUtc);
 }

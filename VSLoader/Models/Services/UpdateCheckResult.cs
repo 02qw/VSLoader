@@ -6,6 +6,10 @@ public sealed class UpdateCheckResult
 
     public List<string> Failures { get; } = new();
 
+    public DateTimeOffset? DetectedGlobalConfigExportedAt { get; set; }
+
+    public DateTime? DetectedGlobalConfigWriteTimeUtc { get; set; }
+
     public DateTime? DetectedRulesWriteTimeUtc { get; set; }
 
     public DateTime? DetectedMapWriteTimeUtc { get; set; }

@@ -5,11 +5,11 @@ namespace VSLoader.Views;
 
 public partial class ShortcutEditWindow : Window
 {
-    public ShortcutEditWindow(ShortcutEditViewModel viewModel)
+    public ShortcutEditWindow(ShortcutEditViewModel viewModel, Window? owner = null)
     {
         InitializeComponent();
         DataContext = viewModel;
-        Owner = System.Windows.Application.Current.MainWindow;
+        Owner = owner ?? System.Windows.Application.Current.MainWindow;
         viewModel.RequestClose += result =>
         {
             DialogResult = result;

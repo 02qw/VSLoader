@@ -17,9 +17,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         WebUiConfig webUiConfig,
         UpdateCheckConfig updateCheckConfig,
         HotkeyConfig hotkeyConfig,
+        MapHotkeyConfig mapHotkeyConfig,
         DialogService dialogService,
         PasswordProtectionService passwordProtectionService,
-        Func<HotkeyConfig, SaveResult>? tryRegisterHotkey)
+        Func<HotkeyConfig, MapHotkeyConfig, SaveResult>? tryRegisterHotkeys)
     {
         VSCodePath = vscodePath;
         SoftwareUpdateManifestPath = softwareUpdateManifestPath;
@@ -27,11 +28,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         WebUi = webUiConfig.Clone();
         UpdateCheck = updateCheckConfig.Clone();
         Hotkey = hotkeyConfig.Clone();
+        MapHotkey = mapHotkeyConfig.Clone();
         _dialogService = dialogService;
         _passwordProtectionService = passwordProtectionService;
-        TryRegisterHotkey = tryRegisterHotkey;
+        TryRegisterHotkeys = tryRegisterHotkeys;
         AdminUiPassword = _passwordProtectionService.Unprotect(AdminUi.ProtectedPassword);
         UpdateHotkeyDisplayText();
+        UpdateMapHotkeyDisplayText();
     }
 
     [ObservableProperty]
@@ -56,14 +59,23 @@ public sealed partial class SettingsViewModel : ObservableObject
     private HotkeyConfig hotkey = new();
 
     [ObservableProperty]
+    private MapHotkeyConfig mapHotkey = new();
+
+    [ObservableProperty]
     private string hotkeyDisplayText = string.Empty;
+
+    [ObservableProperty]
+    private string mapHotkeyDisplayText = string.Empty;
 
     [ObservableProperty]
     private bool isRecordingHotkey;
 
+    [ObservableProperty]
+    private bool isRecordingMapHotkey;
+
     public bool Saved { get; private set; }
 
-    private Func<HotkeyConfig, SaveResult>? TryRegisterHotkey { get; }
+    private Func<HotkeyConfig, MapHotkeyConfig, SaveResult>? TryRegisterHotkeys { get; }
 
     [RelayCommand]
     private void BrowseExe()
@@ -106,9 +118,14 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (TryRegisterHotkey is not null)
+        if (!ValidateMapHotkeyConfig())
         {
-            var registerResult = TryRegisterHotkey(Hotkey);
+            return;
+        }
+
+        if (TryRegisterHotkeys is not null)
+        {
+            var registerResult = TryRegisterHotkeys(Hotkey, MapHotkey);
             if (!registerResult.Success)
             {
                 _dialogService.ShowError(registerResult.ErrorMessage ?? "快捷键注册失败。");
@@ -128,6 +145,16 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(path))
         {
             SoftwareUpdateManifestPath = path;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseGlobalConfigPackage()
+    {
+        var path = _dialogService.SelectJsonFile();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            UpdateCheck.GlobalConfigPackagePath = path;
         }
     }
 
@@ -154,6 +181,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void StartRecordHotkey()
     {
+        IsRecordingMapHotkey = false;
         IsRecordingHotkey = true;
         HotkeyDisplayText = "请按下快捷键...";
     }
@@ -166,6 +194,22 @@ public sealed partial class SettingsViewModel : ObservableObject
         UpdateHotkeyDisplayText();
     }
 
+    [RelayCommand]
+    private void StartRecordMapHotkey()
+    {
+        IsRecordingHotkey = false;
+        IsRecordingMapHotkey = true;
+        MapHotkeyDisplayText = "请按下地图快捷键...";
+    }
+
+    [RelayCommand]
+    private void ClearMapHotkey()
+    {
+        MapHotkey = new MapHotkeyConfig { Enabled = false, Key = string.Empty };
+        IsRecordingMapHotkey = false;
+        UpdateMapHotkeyDisplayText();
+    }
+
     public void SetRecordedHotkey(bool ctrl, bool alt, bool shift, string key, string inputType = "Keyboard")
     {
         Hotkey.Ctrl = ctrl;
@@ -176,6 +220,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         Hotkey.Enabled = true;
         IsRecordingHotkey = false;
         UpdateHotkeyDisplayText();
+    }
+
+    public void SetRecordedMapHotkey(bool ctrl, bool alt, bool shift, string key)
+    {
+        MapHotkey.Ctrl = ctrl;
+        MapHotkey.Alt = alt;
+        MapHotkey.Shift = shift;
+        MapHotkey.Key = key;
+        MapHotkey.Enabled = true;
+        IsRecordingMapHotkey = false;
+        UpdateMapHotkeyDisplayText();
     }
 
     [RelayCommand]
@@ -195,6 +250,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         AdminUi.InstanceNameKey = AdminUi.InstanceNameKey.Trim();
         AdminUi.PortKey = AdminUi.PortKey.Trim();
         AdminUi.ServiceNameKey = AdminUi.ServiceNameKey.Trim();
+        AdminUi.AutoPasteWindowTitleKeyword = AdminUi.AutoPasteWindowTitleKeyword.Trim();
+        AdminUi.AutoPasteProcessNames = AdminUi.AutoPasteProcessNames.Trim();
+        AdminUi.AutoPasteTimeoutSeconds = Math.Clamp(AdminUi.AutoPasteTimeoutSeconds, 1, 60);
+        AdminUi.AutoPasteInitialDelayMilliseconds = Math.Clamp(AdminUi.AutoPasteInitialDelayMilliseconds, 0, 30000);
+        AdminUi.AutoPastePollIntervalMilliseconds = Math.Clamp(AdminUi.AutoPastePollIntervalMilliseconds, 50, 2000);
     }
 
     private void TrimWebUiConfig()
@@ -207,8 +267,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private void TrimUpdateCheckConfig()
     {
-        UpdateCheck.RulesFilePath = UpdateCheck.RulesFilePath.Trim();
-        UpdateCheck.MapFilePath = UpdateCheck.MapFilePath.Trim();
+        UpdateCheck.GlobalConfigPackagePath = UpdateCheck.GlobalConfigPackagePath.Trim();
     }
 
     private bool ValidateAdminUiConfig()
@@ -222,6 +281,14 @@ public sealed partial class SettingsViewModel : ObservableObject
             || string.IsNullOrWhiteSpace(AdminUi.ServiceNameKey))
         {
             _dialogService.ShowError("AdminUI 配置项不能为空。");
+            return false;
+        }
+
+        if (AdminUi.AutoPastePasswordEnabled
+            && (string.IsNullOrWhiteSpace(AdminUi.AutoPasteWindowTitleKeyword)
+                || string.IsNullOrWhiteSpace(AdminUi.AutoPasteProcessNames)))
+        {
+            _dialogService.ShowError("启用自动粘贴时，请配置 AdminUI 窗口标题关键字和允许进程名。");
             return false;
         }
 
@@ -276,10 +343,33 @@ public sealed partial class SettingsViewModel : ObservableObject
         return true;
     }
 
+    private bool ValidateMapHotkeyConfig()
+    {
+        var result = MapHotkeyService.Validate(MapHotkey);
+        if (!result.Success)
+        {
+            _dialogService.ShowError(result.ErrorMessage ?? "地图快捷键无效。");
+            return false;
+        }
+
+        if (MapHotkeyService.HasSameGestureAsMainHotkey(MapHotkey, Hotkey))
+        {
+            _dialogService.ShowError("主程序快捷键和地图快捷键不能相同。");
+            return false;
+        }
+
+        return true;
+    }
+
     private void UpdateHotkeyDisplayText()
     {
         HotkeyDisplayText = Hotkey.Enabled && !string.IsNullOrWhiteSpace(Hotkey.Key)
             ? GlobalHotkeyService.Format(Hotkey)
             : string.Empty;
+    }
+
+    private void UpdateMapHotkeyDisplayText()
+    {
+        MapHotkeyDisplayText = MapHotkeyService.Format(MapHotkey);
     }
 }

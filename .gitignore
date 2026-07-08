@@ -1,9 +1,11 @@
 # Build output
 [Bb]in/
 [Oo]bj/
-publish/
-artifacts/
-installer/Output/
+[Aa]rtifacts/
+/publish/
+/publish-updater/
+/release-update/
+/installer/Output/
 
 # Visual Studio / Rider / VS Code local files
 .vs/
