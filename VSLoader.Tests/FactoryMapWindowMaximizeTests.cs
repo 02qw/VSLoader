@@ -3,18 +3,18 @@ namespace VSLoader.Tests;
 public sealed class FactoryMapWindowMaximizeTests
 {
     [Fact]
-    public void Factory_map_window_constrains_maximized_state_to_working_area()
+    public void Factory_map_window_uses_shared_title_bar_workspace_maximize_logic()
     {
         var code = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
             "VSLoader",
             "Views",
             "FactoryMapWindow.xaml.cs"));
 
-        Assert.Contains("StateChanged += FactoryMapWindow_StateChanged", code);
-        Assert.Contains("ApplyMaximizedWorkingArea", code);
-        Assert.Contains("ClearMaximizedWorkingAreaConstraint", code);
-        Assert.Contains("Screen.FromHandle", code);
-        Assert.Contains("WorkingArea", code);
+        Assert.DoesNotContain("StateChanged += FactoryMapWindow_StateChanged", code);
+        Assert.DoesNotContain("FactoryMapWindow_StateChanged", code);
+        Assert.DoesNotContain("ApplyMaximizedWorkingArea", code);
+        Assert.DoesNotContain("ClearMaximizedWorkingAreaConstraint", code);
+        Assert.DoesNotContain("isApplyingMaximizedWorkingArea", code);
     }
 
     [Fact]

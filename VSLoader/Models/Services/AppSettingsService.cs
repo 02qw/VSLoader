@@ -104,6 +104,7 @@ public sealed class AppSettingsService
         settings.VSCodePath ??= string.Empty;
         settings.SoftwareUpdateManifestPath ??= string.Empty;
         settings.LastWorkspaceId ??= string.Empty;
+        settings.SettingsPageOrder = SettingsPageOrderService.Normalize(settings.SettingsPageOrder).ToList();
         settings.Workspaces ??= new List<WorkspaceInfo>();
 
         foreach (var workspace in settings.Workspaces)

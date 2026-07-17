@@ -46,6 +46,51 @@ public sealed class MainViewModelGlobalConfigTests : IDisposable
     }
 
     [Fact]
+    public void ImportGlobalConfigCommand_uses_main_overlay_background_io_and_live_progress()
+    {
+        var code = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
+            "VSLoader",
+            "ViewModels",
+            "MainViewModel.cs"));
+        var methodStart = code.IndexOf("private async Task ImportGlobalConfigAsync()", StringComparison.Ordinal);
+        var methodEnd = code.IndexOf("private string BuildUpdaterArguments", methodStart, StringComparison.Ordinal);
+
+        Assert.True(methodStart >= 0);
+        Assert.True(methodEnd > methodStart);
+        var method = code[methodStart..methodEnd];
+        Assert.Contains("BusyOverlayHost = BusyOverlayHost.Main;", method);
+        Assert.Contains("await Task.Yield();", method);
+        Assert.Contains("new Progress<GlobalConfigOperationProgress>", method);
+        Assert.Contains("await Task.Run(() =>", method);
+        Assert.Contains("BusyProgressValue = progress.Value;", method);
+        Assert.Contains("BusyProgressText = progress.Message;", method);
+        Assert.Contains("BusyCurrentItemText = progress.CurrentItem;", method);
+
+        var clearBusyIndex = method.LastIndexOf("ClearBusyState();", StringComparison.Ordinal);
+        var showInfoIndex = method.LastIndexOf("_dialogService.ShowInfo", StringComparison.Ordinal);
+        Assert.True(clearBusyIndex >= 0);
+        Assert.True(showInfoIndex > clearBusyIndex);
+    }
+
+    [Fact]
+    public void Global_config_import_service_reports_ordered_operation_stages()
+    {
+        var code = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
+            "VSLoader",
+            "Models",
+            "Services",
+            "GlobalConfigPackageService.cs"));
+
+        Assert.Contains("IProgress<GlobalConfigOperationProgress>? progress = null", code);
+        Assert.Contains("ReportProgress(progress, 10, \"正在读取全局配置包...\"", code);
+        Assert.Contains("ReportProgress(progress, 30, \"正在校验工作区配置...\"", code);
+        Assert.Contains("ReportProgress(progress, 50, \"正在写入工作区配置...\"", code);
+        Assert.Contains("ReportProgress(progress, 65, \"正在导入地图布局...\"", code);
+        Assert.Contains("ReportProgress(progress, 78, \"正在应用界面偏好...\"", code);
+        Assert.Contains("ReportProgress(progress, 88, \"正在校验本机路径...\"", code);
+    }
+
+    [Fact]
     public async Task ExportGlobalConfigCommand_uses_save_dialog_and_writes_package()
     {
         var exportPath = Path.Combine(_rootPath, "export.json");
@@ -61,7 +106,7 @@ public sealed class MainViewModelGlobalConfigTests : IDisposable
         await viewModel.ExportGlobalConfigCommand.ExecuteAsync(null);
 
         var package = JsonSerializer.Deserialize<GlobalConfigPackage>(File.ReadAllText(exportPath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        Assert.Equal("导出项", package.WorkspaceConfig.Shortcuts.Single().Name);
+        Assert.Equal("导出项", package.Workspace!.Settings!.Shortcuts.Single().Name);
         Assert.Contains("全局配置导出完成", dialogService.LastInfoMessage);
     }
 
@@ -88,11 +133,11 @@ public sealed class MainViewModelGlobalConfigTests : IDisposable
         await viewModel.ExportGlobalConfigCommand.ExecuteAsync(null);
 
         var package = JsonSerializer.Deserialize<GlobalConfigPackage>(File.ReadAllText(exportPath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        Assert.True(package.WorkspaceConfig.MapHotkey.Enabled);
-        Assert.True(package.WorkspaceConfig.MapHotkey.Ctrl);
-        Assert.True(package.WorkspaceConfig.MapHotkey.Alt);
-        Assert.False(package.WorkspaceConfig.MapHotkey.Shift);
-        Assert.Equal("K", package.WorkspaceConfig.MapHotkey.Key);
+        Assert.True(package.Workspace!.Settings!.MapHotkey.Enabled);
+        Assert.True(package.Workspace.Settings.MapHotkey.Ctrl);
+        Assert.True(package.Workspace.Settings.MapHotkey.Alt);
+        Assert.False(package.Workspace.Settings.MapHotkey.Shift);
+        Assert.Equal("K", package.Workspace.Settings.MapHotkey.Key);
     }
 
     [Fact]

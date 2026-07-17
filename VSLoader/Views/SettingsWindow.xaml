@@ -29,30 +29,82 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <chromeControls:ModernTitleBar Grid.Row="0" />
-        <DockPanel Grid.Row="1" Margin="0" Background="{StaticResource ModernAppBackgroundBrush}">
-        <StackPanel DockPanel.Dock="Bottom"
-                    Margin="18,6,18,18"
-                    HorizontalAlignment="Right"
-                    Orientation="Horizontal">
-            <Button Style="{StaticResource ModernPrimaryButtonStyle}"
-                    Width="88"
-                    Margin="0,0,8,0"
-                    Command="{Binding SaveCommand}"
-                    Content="保存" />
-            <Button Style="{StaticResource ModernButtonStyle}"
-                    Width="88"
-                    Command="{Binding CancelCommand}"
-                    Content="取消" />
-        </StackPanel>
+        <Grid Grid.Row="1" Background="{StaticResource ModernAppBackgroundBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <ScrollViewer x:Name="SettingsScrollViewer"
-                      Margin="18,18,18,0"
-                      behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
-                      behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
-                      behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
-                      PanningMode="VerticalOnly"
-                      VerticalScrollBarVisibility="Auto">
-            <StackPanel>
+            <Border Grid.Row="0"
+                    Background="#FFFFFF"
+                    BorderBrush="{StaticResource ModernDividerBrush}"
+                    BorderThickness="0,0,0,1">
+                <ListBox x:Name="SettingsPageTabs"
+                         Margin="18,0"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         ItemsSource="{Binding SettingsPages}"
+                         SelectedItem="{Binding SelectedSettingsPage, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock FontWeight="SemiBold" Text="{Binding Title}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="15,11" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="Foreground" Value="{StaticResource ModernSecondaryTextBrush}" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0,0,0,2" />
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#F1F5F9" />
+                                    <Setter Property="Foreground" Value="{StaticResource ModernPrimaryTextBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#EFF6FF" />
+                                    <Setter Property="BorderBrush" Value="#2563EB" />
+                                    <Setter Property="Foreground" Value="#1D4ED8" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="18,14,18,0">
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsGeneralPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
                 <GroupBox Header="VSCode" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -75,6 +127,17 @@
                     </Grid>
                 </GroupBox>
 
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsAdminUiPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
                 <GroupBox Header="AdminUI" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -157,6 +220,17 @@
                     </Grid>
                 </GroupBox>
 
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsWebUiPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
                 <GroupBox Header="WebUI" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -184,6 +258,17 @@
                     </Grid>
                 </GroupBox>
 
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsUpdatesPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
                 <GroupBox Header="软件更新" Style="{StaticResource ModernGroupBoxStyle}">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -241,6 +326,17 @@
                     </Grid>
                 </GroupBox>
 
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsHotkeysPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
                 <GroupBox Header="地图快捷键" Style="{StaticResource ModernGroupBoxStyle}">
                     <StackPanel>
                         <TextBlock Margin="0,0,0,10"
@@ -326,9 +422,231 @@
                         </Grid>
                     </StackPanel>
                 </GroupBox>
-            </StackPanel>
-        </ScrollViewer>
-        </DockPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsContextMenuCapabilitiesPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                <GroupBox Header="右键菜单能力集合" Style="{StaticResource ModernGroupBoxStyle}">
+                    <StackPanel>
+                        <TextBlock Margin="0,0,0,12"
+                                   Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="快捷项列表和地图浏览模式共用此顺序。编辑、删除属于系统管理动作，固定显示在菜单底部。" />
+
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="38" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="86" />
+                                <ColumnDefinition Width="128" />
+                                <ColumnDefinition Width="230" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Foreground="{StaticResource ModernSecondaryTextBrush}" FontSize="12" Text="启用" />
+                            <TextBlock Grid.Column="1" Foreground="{StaticResource ModernSecondaryTextBrush}" FontSize="12" Text="名称" />
+                            <TextBlock Grid.Column="2" Foreground="{StaticResource ModernSecondaryTextBrush}" FontSize="12" Text="类型" />
+                            <TextBlock Grid.Column="3" Foreground="{StaticResource ModernSecondaryTextBrush}" FontSize="12" Text="显示位置" />
+                            <TextBlock Grid.Column="4" Foreground="{StaticResource ModernSecondaryTextBrush}" FontSize="12" Text="操作" />
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding ContextMenuCapabilityItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="0,7"
+                                            BorderBrush="{StaticResource ModernDividerBrush}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="38" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="86" />
+                                                <ColumnDefinition Width="128" />
+                                                <ColumnDefinition Width="230" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <CheckBox Grid.Column="0"
+                                                      Style="{StaticResource ModernCheckBoxStyle}"
+                                                      VerticalAlignment="Center"
+                                                      IsChecked="{Binding Enabled}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding Name}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Name}" />
+                                            <TextBlock Grid.Column="2"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                                       Text="{Binding TypeDisplayName}" />
+                                            <StackPanel Grid.Column="3" VerticalAlignment="Center" Orientation="Horizontal">
+                                                <CheckBox Style="{StaticResource ModernCheckBoxStyle}" Margin="0,0,8,0" Content="列表" IsChecked="{Binding ShowInShortcutList}" />
+                                                <CheckBox Style="{StaticResource ModernCheckBoxStyle}" Content="地图" IsChecked="{Binding ShowInFactoryMap}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="4" HorizontalAlignment="Right" Orientation="Horizontal">
+                                                <Button Style="{StaticResource ModernButtonStyle}"
+                                                        Width="30"
+                                                        MinWidth="30"
+                                                        Padding="0"
+                                                        Margin="0,0,4,0"
+                                                        ToolTip="上移"
+                                                        Command="{Binding DataContext.MoveCapabilityUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="↑" />
+                                                <Button Style="{StaticResource ModernButtonStyle}"
+                                                        Width="30"
+                                                        MinWidth="30"
+                                                        Padding="0"
+                                                        Margin="0,0,4,0"
+                                                        ToolTip="下移"
+                                                        Command="{Binding DataContext.MoveCapabilityDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="↓" />
+                                                <Button Style="{StaticResource ModernButtonStyle}"
+                                                        Width="48"
+                                                        MinWidth="48"
+                                                        Padding="0"
+                                                        Margin="0,0,4,0"
+                                                        Command="{Binding DataContext.EditCapabilityCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="编辑" />
+                                                <Button Style="{StaticResource ModernButtonStyle}"
+                                                        Width="48"
+                                                        MinWidth="48"
+                                                        Padding="0"
+                                                        Margin="0,0,4,0"
+                                                        Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                        Command="{Binding DataContext.DuplicateCapabilityCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="复制" />
+                                                <Button Style="{StaticResource ModernDangerButtonStyle}"
+                                                        Width="48"
+                                                        MinWidth="48"
+                                                        Padding="0"
+                                                        Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                        Command="{Binding DataContext.DeleteCapabilityCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}"
+                                                        Content="删除" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                            <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                                    Margin="0,0,8,0"
+                                    Command="{Binding AddPowerShellCapabilityCommand}"
+                                    Content="新增 PowerShell" />
+                            <Button Style="{StaticResource ModernButtonStyle}"
+                                    Margin="0,0,8,0"
+                                    Command="{Binding AddWebCapabilityCommand}"
+                                    Content="新增 Web" />
+                            <Button Style="{StaticResource ModernButtonStyle}"
+                                    Command="{Binding RestoreDefaultCapabilityOrderCommand}"
+                                    Content="恢复默认顺序" />
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsPageOrderPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                        <GroupBox Header="页面顺序" Style="{StaticResource ModernGroupBoxStyle}">
+                            <StackPanel>
+                                <TextBlock Margin="0,0,0,12"
+                                           Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="使用上移和下移调整设置标签的显示顺序。页面顺序固定显示在最后，避免管理入口无法找到。修改将在保存设置后持久化。" />
+
+                                <ItemsControl ItemsSource="{Binding SettingsPages}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="10"
+                                                    BorderBrush="{StaticResource ModernDividerBrush}"
+                                                    BorderThickness="0,0,0,1">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0"
+                                                               VerticalAlignment="Center"
+                                                               FontWeight="SemiBold"
+                                                               Text="{Binding Title}" />
+                                                    <TextBlock Grid.Column="1"
+                                                               Margin="0,0,12,0"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{StaticResource ModernWeakTextBrush}"
+                                                               Visibility="{Binding IsFixed, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                               Text="固定" />
+                                                    <Button Grid.Column="2"
+                                                            Style="{StaticResource ModernButtonStyle}"
+                                                            Width="64"
+                                                            Margin="0,0,6,0"
+                                                            IsEnabled="{Binding CanMoveUp}"
+                                                            Command="{Binding DataContext.MoveSettingsPageUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            Content="上移" />
+                                                    <Button Grid.Column="3"
+                                                            Style="{StaticResource ModernButtonStyle}"
+                                                            Width="64"
+                                                            IsEnabled="{Binding CanMoveDown}"
+                                                            Command="{Binding DataContext.MoveSettingsPageDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"
+                                                            Content="下移" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Button Style="{StaticResource ModernButtonStyle}"
+                                        Margin="0,14,0,0"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding RestoreDefaultSettingsPageOrderCommand}"
+                                        Content="恢复默认顺序" />
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Border Grid.Row="2"
+                    Margin="0,10,0,0"
+                    Padding="18,12,18,18"
+                    Background="#FFFFFF"
+                    BorderBrush="{StaticResource ModernDividerBrush}"
+                    BorderThickness="0,1,0,0">
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                            Width="88"
+                            Margin="0,0,8,0"
+                            Command="{Binding SaveCommand}"
+                            Content="保存" />
+                    <Button Style="{StaticResource ModernButtonStyle}"
+                            Width="88"
+                            Command="{Binding CancelCommand}"
+                            Content="取消" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
     </Border>
 </Window>

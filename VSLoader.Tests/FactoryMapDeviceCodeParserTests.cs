@@ -23,4 +23,18 @@ public sealed class FactoryMapDeviceCodeParserTests
     {
         Assert.Equal(string.Empty, FactoryMapDeviceCodeParser.Parse(path));
     }
+
+    [Fact]
+    public void Implementation_delegates_to_shared_target_identity_parser()
+    {
+        var source = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
+            "VSLoader",
+            "Models",
+            "Services",
+            "FactoryMapDeviceCodeParser.cs"));
+
+        Assert.Contains("ShortcutTargetIdentityParser.Parse", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Regex", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("LastIndexOf", source, StringComparison.Ordinal);
+    }
 }

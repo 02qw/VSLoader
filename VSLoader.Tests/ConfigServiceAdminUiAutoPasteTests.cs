@@ -17,130 +17,78 @@ public sealed class ConfigServiceAdminUiAutoPasteTests : IDisposable
     [Theory]
     [InlineData("znt client")]
     [InlineData("")]
-    public void Load_migrates_old_or_empty_auto_paste_title_keyword_to_processor(string keyword)
+    public void Load_migrates_old_or_empty_title_keyword_to_processor(string keyword)
     {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
-        {
-            AutoPasteWindowTitleKeyword = keyword
-        });
+        var loaded = LoadConfigWithAdminUi(new AdminUiConfig { AutoPasteWindowTitleKeyword = keyword });
 
         Assert.Equal("processor", loaded.AdminUi.AutoPasteWindowTitleKeyword);
     }
 
     [Fact]
-    public void Load_preserves_custom_auto_paste_title_keyword()
+    public void Load_preserves_custom_title_keyword_and_restores_empty_process_names()
     {
         var loaded = LoadConfigWithAdminUi(new AdminUiConfig
         {
-            AutoPasteWindowTitleKeyword = "TAOI"
-        });
-
-        Assert.Equal("TAOI", loaded.AdminUi.AutoPasteWindowTitleKeyword);
-    }
-
-    [Fact]
-    public void Load_restores_empty_auto_paste_process_names()
-    {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
-        {
+            AutoPasteWindowTitleKeyword = "TAOI",
             AutoPasteProcessNames = ""
         });
 
+        Assert.Equal("TAOI", loaded.AdminUi.AutoPasteWindowTitleKeyword);
         Assert.Equal("java;javaw;javaws", loaded.AdminUi.AutoPasteProcessNames);
     }
 
     [Fact]
-    public void Load_migrates_legacy_auto_paste_delay_defaults_to_faster_safe_defaults()
+    public void Load_ignores_removed_legacy_timing_fields()
     {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
+        var service = new ConfigService(rootPath);
+        File.WriteAllText(service.ConfigPath, """
         {
-            AutoPasteInitialDelayMilliseconds = 2500,
-            AutoPastePollIntervalMilliseconds = 300
-        });
+          "AdminUi": {
+            "AutoPastePasswordEnabled": true,
+            "AutoPasteTimeoutSeconds": 12,
+            "AutoPasteInitialDelayMilliseconds": 2500,
+            "AutoPastePollIntervalMilliseconds": 300,
+            "AutoPasteWindowTitleKeyword": "processor",
+            "AutoPasteProcessNames": "java;javaw"
+          }
+        }
+        """);
 
-        Assert.Equal(0, loaded.AdminUi.AutoPasteInitialDelayMilliseconds);
-        Assert.Equal(50, loaded.AdminUi.AutoPastePollIntervalMilliseconds);
-    }
+        var result = service.Load();
 
-    [Fact]
-    public void Load_migrates_previous_faster_auto_paste_defaults_to_current_fast_defaults()
-    {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
-        {
-            AutoPasteInitialDelayMilliseconds = 800,
-            AutoPastePollIntervalMilliseconds = 150
-        });
-
-        Assert.Equal(0, loaded.AdminUi.AutoPasteInitialDelayMilliseconds);
-        Assert.Equal(50, loaded.AdminUi.AutoPastePollIntervalMilliseconds);
-    }
-
-    [Fact]
-    public void Load_migrates_previous_200ms_auto_paste_delay_default_to_current_fast_default()
-    {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
-        {
-            AutoPasteInitialDelayMilliseconds = 200,
-            AutoPastePollIntervalMilliseconds = 150
-        });
-
-        Assert.Equal(0, loaded.AdminUi.AutoPasteInitialDelayMilliseconds);
-        Assert.Equal(50, loaded.AdminUi.AutoPastePollIntervalMilliseconds);
-    }
-
-    [Fact]
-    public void Load_migrates_previous_100ms_auto_paste_delay_default_to_zero_delay_default()
-    {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
-        {
-            AutoPasteInitialDelayMilliseconds = 100,
-            AutoPastePollIntervalMilliseconds = 150
-        });
-
-        Assert.Equal(0, loaded.AdminUi.AutoPasteInitialDelayMilliseconds);
-        Assert.Equal(50, loaded.AdminUi.AutoPastePollIntervalMilliseconds);
-    }
-
-    [Fact]
-    public void Load_preserves_custom_auto_paste_delay_values()
-    {
-        var loaded = LoadConfigWithAdminUi(new AdminUiConfig
-        {
-            AutoPasteInitialDelayMilliseconds = 1200,
-            AutoPastePollIntervalMilliseconds = 220
-        });
-
-        Assert.Equal(1200, loaded.AdminUi.AutoPasteInitialDelayMilliseconds);
-        Assert.Equal(220, loaded.AdminUi.AutoPastePollIntervalMilliseconds);
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.Config.AdminUi.AutoPastePasswordEnabled);
+        Assert.Equal(12, result.Config.AdminUi.AutoPasteTimeoutSeconds);
+        Assert.Equal("processor", result.Config.AdminUi.AutoPasteWindowTitleKeyword);
     }
 
     [Fact]
     public void Load_migrates_legacy_default_map_hotkey_to_alt_x()
     {
-        var loaded = LoadConfigWithMapHotkey(new MapHotkeyConfig
-        {
-            Enabled = true,
-            Key = "M"
-        });
+        var service = new ConfigService(rootPath);
+        var config = new AppConfig { MapHotkey = new MapHotkeyConfig { Enabled = true, Key = "M" } };
+        File.WriteAllText(service.ConfigPath, JsonSerializer.Serialize(config));
 
-        Assert.True(loaded.MapHotkey.Enabled);
-        Assert.False(loaded.MapHotkey.Ctrl);
-        Assert.True(loaded.MapHotkey.Alt);
-        Assert.False(loaded.MapHotkey.Shift);
-        Assert.Equal("X", loaded.MapHotkey.Key);
+        var result = service.Load();
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.Config.MapHotkey.Alt);
+        Assert.Equal("X", result.Config.MapHotkey.Key);
     }
 
     [Fact]
-    public void Load_adds_alt_modifier_to_legacy_custom_single_key_map_hotkey()
+    public void Load_adds_default_context_menu_capabilities_to_legacy_config()
     {
-        var loaded = LoadConfigWithMapHotkey(new MapHotkeyConfig
-        {
-            Enabled = true,
-            Key = "N"
-        });
+        var service = new ConfigService(rootPath);
+        File.WriteAllText(service.ConfigPath, "{}");
 
-        Assert.True(loaded.MapHotkey.Alt);
-        Assert.Equal("N", loaded.MapHotkey.Key);
+        var result = service.Load();
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(4, result.Config.ContextMenuCapabilities.Items.Count);
+        Assert.Equal(
+            ContextMenuBuiltInActionIds.All,
+            result.Config.ContextMenuCapabilities.Items.Select(item => item.BuiltInActionId));
     }
 
     public void Dispose()
@@ -154,29 +102,8 @@ public sealed class ConfigServiceAdminUiAutoPasteTests : IDisposable
     private AppConfig LoadConfigWithAdminUi(AdminUiConfig adminUi)
     {
         var service = new ConfigService(rootPath);
-        var config = new AppConfig
-        {
-            AdminUi = adminUi
-        };
-        File.WriteAllText(service.ConfigPath, JsonSerializer.Serialize(config));
-
+        File.WriteAllText(service.ConfigPath, JsonSerializer.Serialize(new AppConfig { AdminUi = adminUi }));
         var result = service.Load();
-
-        Assert.True(result.Success, result.ErrorMessage);
-        return result.Config;
-    }
-
-    private AppConfig LoadConfigWithMapHotkey(MapHotkeyConfig mapHotkey)
-    {
-        var service = new ConfigService(rootPath);
-        var config = new AppConfig
-        {
-            MapHotkey = mapHotkey
-        };
-        File.WriteAllText(service.ConfigPath, JsonSerializer.Serialize(config));
-
-        var result = service.Load();
-
         Assert.True(result.Success, result.ErrorMessage);
         return result.Config;
     }

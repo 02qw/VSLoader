@@ -24,10 +24,6 @@ public sealed class AdminUiConfig
 
     public int AutoPasteTimeoutSeconds { get; set; } = 12;
 
-    public int AutoPasteInitialDelayMilliseconds { get; set; } = 0;
-
-    public int AutoPastePollIntervalMilliseconds { get; set; } = 50;
-
     public string AutoPasteWindowTitleKeyword { get; set; } = "processor";
 
     public string AutoPasteProcessNames { get; set; } = "java;javaw;javaws";
@@ -47,8 +43,6 @@ public sealed class AdminUiConfig
             ProtectedPassword = ProtectedPassword,
             AutoPastePasswordEnabled = AutoPastePasswordEnabled,
             AutoPasteTimeoutSeconds = AutoPasteTimeoutSeconds,
-            AutoPasteInitialDelayMilliseconds = AutoPasteInitialDelayMilliseconds,
-            AutoPastePollIntervalMilliseconds = AutoPastePollIntervalMilliseconds,
             AutoPasteWindowTitleKeyword = AutoPasteWindowTitleKeyword,
             AutoPasteProcessNames = AutoPasteProcessNames
         };

@@ -11,7 +11,9 @@ public sealed class MainWindowSearchBoxTests
         var searchBoxBlock = ExtractSearchBoxBlock(xaml);
 
         Assert.Contains("Style=\"{StaticResource ModernTextBoxStyle}\"", searchBoxBlock);
-        Assert.Contains("Text=\"{Binding SearchText, UpdateSourceTrigger=PropertyChanged}\"", searchBoxBlock);
+        Assert.Contains(
+            "Text=\"{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=120}\"",
+            searchBoxBlock);
         Assert.DoesNotContain("Padding=", searchBoxBlock);
         Assert.DoesNotContain("VerticalContentAlignment=", searchBoxBlock);
     }

@@ -1,16 +1,31 @@
 param(
-    [string]$Version = "3.3.5",
+    [string]$Version = "4.0.0",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [string]$UpdateOutputDir = ".\release-update",
     [string]$ReleaseNotes = 
 "
 更新日志:
--自动登录增强
--修复节点边缘连线超出
--小范围UI重构
+-V4.0.0
+-增加自定义基础能力
+-优化地图实现
+-修复主界面搜索bug
+-优化已知bug
+
 "
 #History
+# -优化系统稳定性
+# -重构地图节点逻辑到V6
+# -优化自动化登录逻辑
+# -优化地图节点设计
+# -修复浏览/编辑模式切换地图状态被重置
+# -优化地图界面的按钮的交互逻辑
+# -局部更换ICON图标
+# -优化地图性能
+# -自动登录稳定增强
+# -修复节点边缘连线超出
+# -小范围UI重构
+# -优化文本输入框
 # -自动登录AdminUI
 # -独立地图和主程序窗口
 # -优化更新逻辑

@@ -34,74 +34,55 @@
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
                 <Button x:Name="MinimizeButton"
                         Style="{StaticResource ModernTitleBarButtonStyle}"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         Click="MinimizeButton_Click"
                         ToolTip="最小化">
-                    <Grid Width="14"
-                          Height="14">
-                        <Line X1="1"
-                              Y1="7"
-                              X2="13"
-                              Y2="7"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1.6"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round" />
-                    </Grid>
+                    <Viewbox Width="14"
+                             Height="14">
+                        <Path Width="1024"
+                              Height="1024"
+                              Data="{StaticResource ModernTitleBarMinimizeIconGeometry}"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Stretch="Uniform" />
+                    </Viewbox>
                 </Button>
                 <Button x:Name="MaximizeRestoreButton"
                         Style="{StaticResource ModernTitleBarButtonStyle}"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         Click="MaximizeRestoreButton_Click"
                         ToolTip="最大化/还原">
                     <Grid Width="14"
                           Height="14">
-                        <Rectangle x:Name="MaximizeIcon"
-                                   Width="11"
-                                   Height="11"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                   StrokeThickness="1.5" />
-                        <Grid x:Name="RestoreIcon"
-                              Visibility="Collapsed">
-                            <Rectangle Width="9"
-                                       Height="9"
-                                       Margin="1,4,4,1"
-                                       HorizontalAlignment="Left"
-                                       VerticalAlignment="Bottom"
-                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                       StrokeThickness="1.5" />
-                            <Rectangle Width="9"
-                                       Height="9"
-                                       Margin="4,1,1,4"
-                                       HorizontalAlignment="Right"
-                                       VerticalAlignment="Top"
-                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                       StrokeThickness="1.5" />
-                        </Grid>
+                        <Viewbox x:Name="MaximizeIcon">
+                            <Path Width="1024"
+                                  Height="1024"
+                                  Data="{StaticResource ModernTitleBarMaximizeIconGeometry}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Stretch="Uniform" />
+                        </Viewbox>
+                        <Viewbox x:Name="RestoreIcon"
+                                 Visibility="Collapsed">
+                            <Path Width="1024"
+                                  Height="1024"
+                                  Data="{StaticResource ModernTitleBarWindowedIconGeometry}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Stretch="Uniform" />
+                        </Viewbox>
                     </Grid>
                 </Button>
-                <Button Style="{StaticResource ModernTitleBarCloseButtonStyle}"
+                <Button x:Name="CloseButton"
+                        Style="{StaticResource ModernTitleBarCloseButtonStyle}"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         Click="CloseButton_Click"
                         ToolTip="关闭">
-                    <Grid Width="14"
-                          Height="14">
-                        <Line X1="3"
-                              Y1="3"
-                              X2="11"
-                              Y2="11"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1.7"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round" />
-                        <Line X1="11"
-                              Y1="3"
-                              X2="3"
-                              Y2="11"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1.7"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round" />
-                    </Grid>
+                    <Viewbox Width="14"
+                             Height="14">
+                        <Path Width="1024"
+                              Height="1024"
+                              Data="{StaticResource ModernTitleBarCloseIconGeometry}"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Stretch="Uniform" />
+                    </Viewbox>
                 </Button>
             </StackPanel>
         </Grid>

@@ -46,6 +46,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         var dialogService = new RecordingDialogService();
         dialogService.ConfirmResult = false;
         var viewModel = CreateViewModel(appSettings, dialogService);
+        dialogService.IsBusyProbe = () => viewModel.IsBusy;
         var startedUpdater = false;
         var exitRequested = false;
         viewModel.StartUpdater = (_, _) => startedUpdater = true;
@@ -56,6 +57,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         Assert.False(startedUpdater);
         Assert.False(exitRequested);
         Assert.False(viewModel.IsBusy);
+        Assert.All(dialogService.ConfirmBusyStates, Assert.False);
     }
 
     [Fact]
@@ -76,6 +78,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         };
         var dialogService = new RecordingDialogService();
         var viewModel = CreateViewModel(appSettings, dialogService);
+        dialogService.IsBusyProbe = () => viewModel.IsBusy;
         var detectedUpdate = new UpdateCheckResult
         {
             DetectedSoftwareVersion = "99.0.0"
@@ -93,6 +96,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         Assert.False(exitRequested);
         Assert.Empty(dialogService.ConfirmMessages);
         Assert.Contains(dialogService.Infos, message => message.Contains("当前已是最新版本", StringComparison.Ordinal));
+        Assert.All(dialogService.InfoBusyStates, Assert.False);
         Assert.False(viewModel.HasSoftwareUpdateNotice);
         Assert.False(viewModel.IsBusy);
     }
@@ -149,6 +153,7 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
         var dialogService = new RecordingDialogService();
         dialogService.ConfirmResult = true;
         var viewModel = CreateViewModel(appSettings, dialogService);
+        dialogService.IsBusyProbe = () => viewModel.IsBusy;
         var exitRequested = false;
         viewModel.GetAppBaseDirectory = () => _appDirectory;
         viewModel.StartUpdater = (_, _) => false;
@@ -158,6 +163,8 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
 
         Assert.False(exitRequested);
         Assert.Contains(dialogService.Errors, message => message.Contains("更新器启动失败", StringComparison.Ordinal));
+        Assert.All(dialogService.ConfirmBusyStates, Assert.False);
+        Assert.All(dialogService.ErrorBusyStates, Assert.False);
         Assert.False(viewModel.IsBusy);
     }
 
@@ -278,21 +285,32 @@ public sealed class MainViewModelSoftwareUpdateTests : IDisposable
 
         public List<string> ConfirmMessages { get; } = new();
 
+        public List<bool> ErrorBusyStates { get; } = new();
+
+        public List<bool> InfoBusyStates { get; } = new();
+
+        public List<bool> ConfirmBusyStates { get; } = new();
+
+        public Func<bool>? IsBusyProbe { get; set; }
+
         public bool ConfirmResult { get; set; } = true;
 
         public override void ShowInfo(string message)
         {
             Infos.Add(message);
+            InfoBusyStates.Add(IsBusyProbe?.Invoke() == true);
         }
 
         public override void ShowError(string message)
         {
             Errors.Add(message);
+            ErrorBusyStates.Add(IsBusyProbe?.Invoke() == true);
         }
 
         public override bool Confirm(string message)
         {
             ConfirmMessages.Add(message);
+            ConfirmBusyStates.Add(IsBusyProbe?.Invoke() == true);
             return ConfirmResult;
         }
     }

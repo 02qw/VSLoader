@@ -17,14 +17,24 @@ public sealed class ModernThemeResourceTests
     }
 
     [Fact]
-    public void Modern_input_templates_do_not_use_padding_as_content_host_margin()
+    public void Modern_input_templates_do_not_double_apply_text_padding()
     {
         var xaml = ReadModernThemeXaml();
+        var inputStyleBlocks = new[]
+        {
+            ExtractStyleBlock(xaml, "ModernTextBoxStyle"),
+            ExtractStyleBlock(xaml, "ModernMultilineTextBoxStyle"),
+            ExtractStyleBlock(xaml, "ModernPasswordBoxStyle")
+        };
 
-        Assert.DoesNotContain("Margin=\"{TemplateBinding Padding}\"", xaml);
-        Assert.Contains("ModernTextBoxStyle", xaml);
-        Assert.Contains("ModernPasswordBoxStyle", xaml);
-        Assert.Contains("ModernReadOnlyTextBoxStyle", xaml);
+        foreach (var styleBlock in inputStyleBlocks)
+        {
+            Assert.DoesNotContain("Margin=\"{TemplateBinding Padding}\"", styleBlock);
+            Assert.DoesNotContain("Margin=\"10,0\"", styleBlock);
+            Assert.DoesNotContain("Margin=\"10,8\"", styleBlock);
+            Assert.DoesNotContain("Padding=\"{TemplateBinding Padding}\"", styleBlock);
+            Assert.Contains("PART_ContentHost", styleBlock);
+        }
     }
 
     [Fact]
@@ -38,6 +48,22 @@ public sealed class ModernThemeResourceTests
         Assert.Contains("x:Key=\"ModernIconButtonStyle\"", xaml);
         Assert.True(CountOccurrences(xaml, "Property=\"FocusVisualStyle\" Value=\"{x:Null}\"") >= 4);
         Assert.True(CountOccurrences(xaml, "Property=\"IsKeyboardFocused\" Value=\"True\"") >= 3);
+    }
+
+    [Fact]
+    public void Modern_toolbar_toggle_button_style_separates_active_state_from_keyboard_focus()
+    {
+        var xaml = ReadModernThemeXaml();
+        var normalButtonBlock = ExtractStyleBlock(xaml, "ModernButtonStyle");
+        var toggleButtonBlock = ExtractStyleBlock(xaml, "ModernToolbarToggleButtonStyle");
+
+        Assert.Contains("ModernActiveButtonBackgroundBrush", xaml);
+        Assert.Contains("ModernActiveButtonBorderBrush", xaml);
+        Assert.Contains("ModernFocusBorderBrush", xaml);
+        Assert.Contains("Property=\"Tag\" Value=\"Active\"", toggleButtonBlock);
+        Assert.Contains("ModernActiveButtonBackgroundBrush", toggleButtonBlock);
+        Assert.Contains("ModernActiveButtonBorderBrush", toggleButtonBlock);
+        Assert.DoesNotContain("BorderBrush\" Value=\"{StaticResource ModernPrimaryBrush}\"", normalButtonBlock);
     }
 
     [Fact]
@@ -93,5 +119,17 @@ public sealed class ModernThemeResourceTests
         }
 
         return count;
+    }
+
+    private static string ExtractStyleBlock(string xaml, string styleKey)
+    {
+        var startToken = $"x:Key=\"{styleKey}\"";
+        var startIndex = xaml.IndexOf(startToken, StringComparison.Ordinal);
+        Assert.True(startIndex >= 0, $"Style {styleKey} should exist.");
+
+        var nextStyleIndex = xaml.IndexOf("<Style ", startIndex + startToken.Length, StringComparison.Ordinal);
+        return nextStyleIndex < 0
+            ? xaml[startIndex..]
+            : xaml[startIndex..nextStyleIndex];
     }
 }

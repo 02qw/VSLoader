@@ -8,6 +8,7 @@ using VSLoader.Models;
 using VSLoader.Services;
 using VSLoader.ViewModels;
 using VSLoader.Views;
+using VSLoader.Views.Controls;
 using WinForms = System.Windows.Forms;
 
 namespace VSLoader;
@@ -21,6 +22,7 @@ public partial class MainWindow : Window
     private const double DefaultLayoutMapHeightRatio = 0.88;
     private const double DefaultLayoutRightMarginRatio = 0.01;
     private const double DefaultLayoutGap = 0;
+    private const double WorkspaceMaximizedBoundsTolerance = 8;
 
     private static readonly Dictionary<string, string> SortHeaderTitles = new()
     {
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
     };
 
     private readonly GlobalHotkeyService _hotkeyService = new();
+    private readonly MainWindowInputDiagnosticLogService _inputDiagnosticLogService = new();
     private readonly FactoryMapLayoutService _factoryMapLayoutService = new();
     private readonly AppSettings _appSettings;
     private readonly AppSettingsService _appSettingsService;
@@ -72,6 +75,10 @@ public partial class MainWindow : Window
         LocationChanged += MainWindow_LocationOrSizeChanged;
         SizeChanged += MainWindow_LocationOrSizeChanged;
         StateChanged += MainWindow_StateChanged;
+        Activated += MainWindow_Activated;
+        Deactivated += MainWindow_Deactivated;
+        IsVisibleChanged += MainWindow_IsVisibleChanged;
+        PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewMouseDown += MainWindow_PreviewMouseDown;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
@@ -93,7 +100,8 @@ public partial class MainWindow : Window
             new ClipboardService(),
             new UpdateCheckService(),
             _workspaceContext.UpdateTimePath,
-            factoryMapLayoutPath: _workspaceContext.FactoryMapLayoutPath);
+            factoryMapLayoutPath: _workspaceContext.FactoryMapLayoutPath,
+            workspaceId: _workspaceContext.Id);
         viewModel.RequestApplicationExit = RequestRealApplicationExit;
         return viewModel;
     }
@@ -198,6 +206,7 @@ public partial class MainWindow : Window
         if (!_isViewModelEventsAttached)
         {
             viewModel.ShortcutsChanged += MainViewModel_ShortcutsChanged;
+            viewModel.WorkspaceLayoutImported += MainViewModel_WorkspaceLayoutImported;
             viewModel.PropertyChanged += MainViewModel_PropertyChanged;
             _isViewModelEventsAttached = true;
         }
@@ -349,6 +358,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private void MainViewModel_WorkspaceLayoutImported(object? sender, EventArgs e)
+    {
+        LoadWindowLayoutConfig();
+        RestoreShortcutGridColumnWidths();
+        if (_factoryMapWindow is not null)
+        {
+            if (_runtimeLayoutState.FactoryMapView is not null)
+            {
+                _factoryMapWindow.RestoreViewState(_runtimeLayoutState.FactoryMapView);
+            }
+
+            RestoreFactoryMapWindowState();
+        }
+
+        SaveWindowLayoutImmediately();
+    }
+
     private void MainViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.SelectedShortcut))
@@ -359,6 +385,7 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        LogWindowInputDiagnostic("Closed");
         CleanupForClose();
     }
 
@@ -376,6 +403,7 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel viewModel)
         {
             viewModel.StopUpdateCheckLoop();
+            viewModel.ShutdownAdminUiAutomation();
         }
 
         _hotkeyService.Dispose();
@@ -390,18 +418,23 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        LogWindowInputDiagnostic("Closing", $"exitRequested={_isExitRequested} cancelBefore={e.Cancel}");
         if (_isExitRequested)
         {
+            LogWindowInputDiagnostic("ClosingDecision", "action=Close");
             return;
         }
 
         e.Cancel = true;
+        LogWindowInputDiagnostic("ClosingDecision", "action=Hide cancel=True");
         SaveMainWindowBoundsToSession();
         Hide();
+        LogWindowInputDiagnostic("Hidden", "source=MainWindowClosing");
     }
 
     private void ToggleWindowFromHotkey()
     {
+        LogWindowInputDiagnostic("MainHotkeyCallback", "configured=Alt+V");
         if (ShouldRestoreFromHotkey(IsVisible, WindowState == WindowState.Minimized, IsVsLoaderActive()))
         {
             RestoreAndActivate();
@@ -458,11 +491,38 @@ public partial class MainWindow : Window
         _factoryMapWindow.Topmost = true;
         _factoryMapWindow.Topmost = false;
         _factoryMapWindow.Focus();
+        _factoryMapWindow.Dispatcher.BeginInvoke(
+            () => _factoryMapWindow.RestoreMapInputFocus(),
+            DispatcherPriority.ContextIdle);
     }
 
     private void FactoryMapButton_Click(object sender, RoutedEventArgs e)
     {
         ToggleFactoryMapWindow();
+    }
+
+    private void ToolbarButton_Click(object sender, RoutedEventArgs e)
+    {
+        RestoreMainContentFocusAfterToolbarClick();
+    }
+
+    private void RestoreMainContentFocusAfterToolbarClick()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!IsActive)
+            {
+                return;
+            }
+
+            if (ShortcutsGrid.IsVisible && ShortcutsGrid.IsEnabled)
+            {
+                Keyboard.Focus(ShortcutsGrid);
+                return;
+            }
+
+            Keyboard.Focus(MainFocusTarget);
+        }, DispatcherPriority.Background);
     }
 
     private void MainWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -484,6 +544,18 @@ public partial class MainWindow : Window
 
         Keyboard.ClearFocus();
         Keyboard.Focus(MainFocusTarget);
+    }
+
+    private void LogWindowInputDiagnostic(string eventName, string details = "")
+    {
+        var state = $"active={IsActive} visible={IsVisible} state={WindowState} "
+            + $"focused={DescribeElement(Keyboard.FocusedElement)} modifiers={Keyboard.Modifiers}";
+        _inputDiagnosticLogService.Log(eventName, $"{state} {details}".Trim());
+    }
+
+    private static string DescribeElement(object? element)
+    {
+        return element is null ? "null" : element.GetType().Name;
     }
 
     private void WorkspaceButton_Click(object sender, RoutedEventArgs e)
@@ -520,6 +592,7 @@ public partial class MainWindow : Window
         _isFactoryMapOpen = true;
         _runtimeLayoutState.WasFactoryMapOpen = true;
         ShowFactoryMapIfNeeded();
+        ActivateFactoryMapWindow();
     }
 
     private void ShowFactoryMapIfNeeded()
@@ -533,7 +606,10 @@ public partial class MainWindow : Window
         {
             _factoryMapWindow = new FactoryMapWindow(
                 SelectShortcutFromMap,
-                ExecuteShortcutActionFromMap,
+                GetContextMenuCapabilitiesForMap,
+                ExecuteContextMenuCapabilityFromMapAsync,
+                EditShortcutFromMap,
+                DeleteShortcutFromMap,
                 SaveFactoryMapLayout,
                 GetCurrentShortcutsForMap,
                 ResolveFactoryMapLayoutPath,
@@ -560,10 +636,12 @@ public partial class MainWindow : Window
         _factoryMapWindow.Show();
 
         RefreshFactoryMap();
+        RestoreFactoryMapWindowState();
     }
 
     private void ToggleFactoryMapFromGlobalHotkey()
     {
+        LogWindowInputDiagnostic("MapHotkeyCallback", "configured=Alt+X");
         Dispatcher.Invoke(() =>
         {
             var action = GetFactoryMapHotkeyAction(
@@ -586,7 +664,6 @@ public partial class MainWindow : Window
                 case FactoryMapHotkeyAction.Activate:
                     _factoryMapWindow?.Show();
                     ActivateFactoryMapWindow();
-                    RefreshFactoryMap();
                     break;
                 case FactoryMapHotkeyAction.Minimize:
                     SaveFactoryMapStateToSession(includeViewState: false);
@@ -623,8 +700,43 @@ public partial class MainWindow : Window
 
         _factoryMapWindow.Show();
         _factoryMapWindow.WindowState = WindowState.Normal;
+        _runtimeLayoutState.FactoryMapWindowState = FactoryMapWindowStateKinds.Normal;
+        SaveWindowLayoutImmediately();
         _factoryMapWindow.Activate();
-        RefreshFactoryMap();
+    }
+
+    private void RestoreFactoryMapWindowState()
+    {
+        if (_factoryMapWindow is null)
+        {
+            return;
+        }
+
+        _isApplyingRuntimeLayout = true;
+        try
+        {
+            switch (NormalizeFactoryMapWindowState(_runtimeLayoutState.FactoryMapWindowState))
+            {
+                case FactoryMapWindowStateKinds.WorkspaceMaximized:
+                    ModernTitleBar.ApplyWorkspaceMaximized(_factoryMapWindow);
+                    break;
+                case FactoryMapWindowStateKinds.Minimized:
+                    _factoryMapWindow.WindowState = WindowState.Minimized;
+                    break;
+                case FactoryMapWindowStateKinds.Normal:
+                default:
+                    if (_factoryMapWindow.WindowState == WindowState.Minimized)
+                    {
+                        _factoryMapWindow.WindowState = WindowState.Normal;
+                    }
+
+                    break;
+            }
+        }
+        finally
+        {
+            _isApplyingRuntimeLayout = false;
+        }
     }
 
     private bool HasActiveBlockingWindow()
@@ -685,6 +797,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (loadResult.Map.RequiresPersistence)
+        {
+            var migrationSave = _factoryMapLayoutService.Save(layoutPath, loadResult.Map);
+            if (!migrationSave.Success)
+            {
+                _factoryMapWindow.ShowError(migrationSave.ErrorMessage ?? "工厂地图节点尺寸迁移后保存失败。");
+                return;
+            }
+        }
+
         var hasViewState = _runtimeLayoutState.FactoryMapView is not null;
         _factoryMapWindow.RenderMap(loadResult.Map, resetView: !hasViewState);
         if (hasViewState)
@@ -693,6 +815,7 @@ public partial class MainWindow : Window
         }
 
         SyncFactoryMapSelection();
+        _factoryMapWindow.RestoreMapInputFocus();
     }
 
     private void MarkMapFileUsed(string mapFilePath)
@@ -721,6 +844,7 @@ public partial class MainWindow : Window
         }
 
         viewModel.ShortcutsChanged -= MainViewModel_ShortcutsChanged;
+        viewModel.WorkspaceLayoutImported -= MainViewModel_WorkspaceLayoutImported;
         viewModel.PropertyChanged -= MainViewModel_PropertyChanged;
         _isViewModelEventsAttached = false;
     }
@@ -898,10 +1022,41 @@ public partial class MainWindow : Window
 
     private void MainWindow_StateChanged(object? sender, EventArgs e)
     {
+        LogWindowInputDiagnostic("StateChanged");
         if (WindowState == WindowState.Minimized)
         {
             SaveMainWindowBoundsToSession();
         }
+    }
+
+    private void MainWindow_Activated(object? sender, EventArgs e)
+    {
+        _factoryMapWindow?.CancelPendingInputFocusRestore();
+        LogWindowInputDiagnostic("Activated");
+    }
+
+    private void MainWindow_Deactivated(object? sender, EventArgs e)
+    {
+        LogWindowInputDiagnostic("Deactivated");
+    }
+
+    private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        LogWindowInputDiagnostic("VisibilityChanged", $"visible={e.NewValue}");
+    }
+
+    private void MainWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var diagnosticKey = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (diagnosticKey is not (Key.Enter or Key.Back))
+        {
+            return;
+        }
+
+        LogWindowInputDiagnostic(
+            "PreviewKeyDown",
+            $"key={e.Key} logicalKey={diagnosticKey} systemKey={e.SystemKey} modifiers={Keyboard.Modifiers} handled={e.Handled} "
+            + $"originalSource={DescribeElement(e.OriginalSource)}");
     }
 
     private void FactoryMapWindow_StateChanged(object? sender, EventArgs e)
@@ -944,7 +1099,10 @@ public partial class MainWindow : Window
 
     private void SaveMainWindowBoundsToSession()
     {
-        if (!_initialLayoutRestoreGuard.CanSaveWindowBounds || _isApplyingRuntimeLayout || WindowState != WindowState.Normal)
+        if (!_initialLayoutRestoreGuard.CanSaveWindowBounds
+            || _isApplyingRuntimeLayout
+            || WindowState != WindowState.Normal
+            || ModernTitleBar.IsWorkspaceMaximized(this))
         {
             return;
         }
@@ -988,23 +1146,24 @@ public partial class MainWindow : Window
         }
 
         _runtimeLayoutState.WasFactoryMapOpen = _isFactoryMapOpen;
-        var sourceBounds = _factoryMapWindow.WindowState == WindowState.Minimized
-            ? _factoryMapWindow.RestoreBounds
-            : new Rect(
-                _factoryMapWindow.Left,
-                _factoryMapWindow.Top,
-                _factoryMapWindow.ActualWidth > 0 ? _factoryMapWindow.ActualWidth : _factoryMapWindow.Width,
-                _factoryMapWindow.ActualHeight > 0 ? _factoryMapWindow.ActualHeight : _factoryMapWindow.Height);
-        var width = sourceBounds.Width;
-        var height = sourceBounds.Height;
-        if (width > 0 && height > 0)
+        if (IsFactoryMapEffectivelyWorkspaceMaximized())
         {
-            _runtimeLayoutState.HasFactoryMapBounds = true;
-            _runtimeLayoutState.FactoryMapLeft = sourceBounds.Left;
-            _runtimeLayoutState.FactoryMapTop = sourceBounds.Top;
-            _runtimeLayoutState.FactoryMapWidth = width;
-            _runtimeLayoutState.FactoryMapHeight = height;
+            _runtimeLayoutState.FactoryMapWindowState = FactoryMapWindowStateKinds.WorkspaceMaximized;
+            SaveFactoryMapBoundsToSession(CaptureFactoryMapWindowBounds());
+            if (includeViewState && _factoryMapWindow.HasUserViewState)
+            {
+                _runtimeLayoutState.FactoryMapView = _factoryMapWindow.CaptureViewState();
+            }
+
+            ScheduleWindowLayoutSave();
+            return;
         }
+
+        _runtimeLayoutState.FactoryMapWindowState = _factoryMapWindow.WindowState == WindowState.Minimized
+            ? FactoryMapWindowStateKinds.Minimized
+            : FactoryMapWindowStateKinds.Normal;
+
+        SaveFactoryMapBoundsToSession(CaptureFactoryMapWindowBounds());
 
         if (includeViewState && _factoryMapWindow.HasUserViewState)
         {
@@ -1012,6 +1171,45 @@ public partial class MainWindow : Window
         }
 
         ScheduleWindowLayoutSave();
+    }
+
+    private Rect CaptureFactoryMapWindowBounds()
+    {
+        if (_factoryMapWindow is null)
+        {
+            return Rect.Empty;
+        }
+
+        return _factoryMapWindow.WindowState == WindowState.Minimized
+            ? _factoryMapWindow.RestoreBounds
+            : new Rect(
+                _factoryMapWindow.Left,
+                _factoryMapWindow.Top,
+                _factoryMapWindow.ActualWidth > 0 ? _factoryMapWindow.ActualWidth : _factoryMapWindow.Width,
+                _factoryMapWindow.ActualHeight > 0 ? _factoryMapWindow.ActualHeight : _factoryMapWindow.Height);
+    }
+
+    private void SaveFactoryMapBoundsToSession(Rect sourceBounds)
+    {
+        var width = sourceBounds.Width;
+        var height = sourceBounds.Height;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        _runtimeLayoutState.HasFactoryMapBounds = true;
+        _runtimeLayoutState.FactoryMapLeft = sourceBounds.Left;
+        _runtimeLayoutState.FactoryMapTop = sourceBounds.Top;
+        _runtimeLayoutState.FactoryMapWidth = width;
+        _runtimeLayoutState.FactoryMapHeight = height;
+    }
+
+    private bool IsFactoryMapEffectivelyWorkspaceMaximized()
+    {
+        return _factoryMapWindow is not null
+            && (ModernTitleBar.IsWorkspaceMaximized(_factoryMapWindow)
+                || IsBoundsEffectivelyWorkspaceMaximized(CaptureFactoryMapWindowBounds()));
     }
 
     private void ScheduleWindowLayoutSave()
@@ -1071,6 +1269,7 @@ public partial class MainWindow : Window
                 }
                 : null,
             WasFactoryMapOpen = _runtimeLayoutState.WasFactoryMapOpen,
+            FactoryMapWindowState = _runtimeLayoutState.FactoryMapWindowState,
             FactoryMapView = _runtimeLayoutState.FactoryMapView is null
                 ? null
                 : new FactoryMapViewStateConfig
@@ -1113,6 +1312,14 @@ public partial class MainWindow : Window
         }
 
         _runtimeLayoutState.WasFactoryMapOpen = config.WasFactoryMapOpen;
+        _runtimeLayoutState.FactoryMapWindowState = NormalizeFactoryMapWindowState(config.FactoryMapWindowState);
+        if (_runtimeLayoutState.FactoryMapWindowState == FactoryMapWindowStateKinds.Normal
+            && config.FactoryMapWindow is not null
+            && IsBoundsEffectivelyWorkspaceMaximized(ToRect(config.FactoryMapWindow)))
+        {
+            _runtimeLayoutState.FactoryMapWindowState = FactoryMapWindowStateKinds.WorkspaceMaximized;
+        }
+
         if (config.FactoryMapView is not null)
         {
             _runtimeLayoutState.FactoryMapView = new FactoryMapViewState
@@ -1125,6 +1332,16 @@ public partial class MainWindow : Window
         }
 
         _runtimeLayoutState.ShortcutGridColumns = config.ShortcutGridColumns;
+    }
+
+    private static string NormalizeFactoryMapWindowState(string? state)
+    {
+        return state switch
+        {
+            FactoryMapWindowStateKinds.Minimized => FactoryMapWindowStateKinds.Minimized,
+            FactoryMapWindowStateKinds.WorkspaceMaximized => FactoryMapWindowStateKinds.WorkspaceMaximized,
+            _ => FactoryMapWindowStateKinds.Normal
+        };
     }
 
     private void RestoreShortcutGridColumnWidths()
@@ -1268,6 +1485,20 @@ public partial class MainWindow : Window
         return new Rect(left, top, width, height);
     }
 
+    private static bool IsBoundsEffectivelyWorkspaceMaximized(Rect bounds)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        var workArea = GetWorkArea();
+        return Math.Abs(bounds.Left - workArea.Left) <= WorkspaceMaximizedBoundsTolerance
+            && Math.Abs(bounds.Top - workArea.Top) <= WorkspaceMaximizedBoundsTolerance
+            && Math.Abs(bounds.Width - workArea.Width) <= WorkspaceMaximizedBoundsTolerance
+            && Math.Abs(bounds.Height - workArea.Height) <= WorkspaceMaximizedBoundsTolerance;
+    }
+
     private void ApplyWindowBounds(Window window, Rect bounds)
     {
         _isApplyingRuntimeLayout = true;
@@ -1304,49 +1535,23 @@ public partial class MainWindow : Window
         SelectShortcutInGrid(viewModel, shortcut, focusGrid: false);
     }
 
-    private void ExecuteShortcutActionFromMap(VSLoader.Models.ShortcutItem shortcut, FactoryMapShortcutAction action)
+    private IReadOnlyList<ContextMenuCapabilityDefinition> GetContextMenuCapabilitiesForMap(string surface)
     {
-        SelectShortcutFromMap(shortcut);
-        if (DataContext is not MainViewModel viewModel)
-        {
-            return;
-        }
+        return DataContext is MainViewModel viewModel
+            ? viewModel.GetContextMenuCapabilities(surface)
+            : [];
+    }
 
-        switch (action)
+    private async Task ExecuteContextMenuCapabilityFromMapAsync(
+        VSLoader.Models.ShortcutItem shortcut,
+        ContextMenuCapabilityDefinition capability)
+    {
+        if (DataContext is MainViewModel viewModel)
         {
-            case FactoryMapShortcutAction.OpenVsCode:
-                if (viewModel.OpenShortcutCommand.CanExecute(null))
-                {
-                    viewModel.OpenShortcutCommand.Execute(null);
-                }
-                break;
-            case FactoryMapShortcutAction.OpenAdminUi:
-                if (viewModel.OpenAdminUiCommand.CanExecute(null))
-                {
-                    viewModel.OpenAdminUiCommand.Execute(null);
-                }
-                break;
-            case FactoryMapShortcutAction.DownloadAdminUiLink:
-                if (viewModel.DownloadSelectedAdminUiLinkCommand.CanExecute(null))
-                {
-                    viewModel.DownloadSelectedAdminUiLinkCommand.Execute(null);
-                }
-                break;
-            case FactoryMapShortcutAction.OpenWebUi:
-                if (viewModel.OpenWebUiCommand.CanExecute(null))
-                {
-                    viewModel.OpenWebUiCommand.Execute(null);
-                }
-                break;
-            case FactoryMapShortcutAction.Edit:
-                EditShortcutFromMap(shortcut);
-                break;
-            case FactoryMapShortcutAction.Delete:
-                if (viewModel.DeleteShortcutCommand.CanExecute(null))
-                {
-                    viewModel.DeleteShortcutCommand.Execute(null);
-                }
-                break;
+            await viewModel.ExecuteContextMenuCapabilityAsync(
+                capability,
+                shortcut,
+                ContextMenuCapabilitySurfaces.FactoryMap);
         }
     }
 
@@ -1380,6 +1585,17 @@ public partial class MainWindow : Window
                 new DialogService().ShowError($"编辑快捷项失败：{ex.Message}");
             }
         }
+    }
+
+    private void DeleteShortcutFromMap(VSLoader.Models.ShortcutItem shortcut)
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.DeleteShortcutFromMap(shortcut);
+        RefreshFactoryMap();
     }
 
     private async void DownloadAdminUiLinksFromMap()
@@ -1562,6 +1778,55 @@ public partial class MainWindow : Window
         row.Focus();
         row.IsSelected = true;
         ShortcutsGrid.SelectedItem = row.DataContext;
+    }
+
+    private void ShortcutContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu
+            || DataContext is not MainViewModel viewModel
+            || viewModel.SelectedShortcut is not { } shortcut)
+        {
+            return;
+        }
+
+        menu.Items.Clear();
+        var capabilities = viewModel.GetContextMenuCapabilities(ContextMenuCapabilitySurfaces.ShortcutList);
+        foreach (var capability in capabilities)
+        {
+            var item = new MenuItem
+            {
+                Header = capability.Name,
+                Style = (Style)FindResource("ModernMenuItemStyle"),
+                IsEnabled = !viewModel.IsBusy,
+                Tag = capability
+            };
+            item.Click += async (_, _) =>
+            {
+                await viewModel.ExecuteContextMenuCapabilityAsync(
+                    capability,
+                    shortcut,
+                    ContextMenuCapabilitySurfaces.ShortcutList);
+            };
+            menu.Items.Add(item);
+        }
+
+        if (capabilities.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+        }
+
+        menu.Items.Add(new MenuItem
+        {
+            Header = "编辑",
+            Style = (Style)FindResource("ModernMenuItemStyle"),
+            Command = viewModel.EditShortcutCommand
+        });
+        menu.Items.Add(new MenuItem
+        {
+            Header = "删除",
+            Style = (Style)FindResource("ModernDangerMenuItemStyle"),
+            Command = viewModel.DeleteShortcutCommand
+        });
     }
 
     private void ShortcutsGrid_Sorting(object sender, DataGridSortingEventArgs e)

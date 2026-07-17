@@ -14,6 +14,8 @@ public sealed class RuntimeLayoutState
 
     public bool WasFactoryMapOpen { get; set; }
 
+    public string FactoryMapWindowState { get; set; } = FactoryMapWindowStateKinds.Normal;
+
     public bool HasFactoryMapBounds { get; set; }
 
     public double FactoryMapLeft { get; set; }

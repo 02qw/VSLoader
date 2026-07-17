@@ -37,6 +37,8 @@
   <ItemGroup>
     <Resource Include="Assets\tomato.ico" />
     <Resource Include="Assets\tomato.png" />
+    <Resource Include="Assets\setting.png" />
+    <Resource Include="Assets\setting3.svg" />
   </ItemGroup>
 
   <ItemGroup>

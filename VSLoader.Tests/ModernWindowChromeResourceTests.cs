@@ -15,6 +15,13 @@ public sealed class ModernWindowChromeResourceTests
         Assert.Contains("ModernTitleBarIconBrush", chromeXaml);
         Assert.Contains("ModernTitleBarIconHoverBrush", chromeXaml);
         Assert.Contains("ModernTitleBarCloseIconHoverBrush", chromeXaml);
+        Assert.Contains("x:Key=\"ModernMessageDialogSurfaceStyle\"", chromeXaml);
+        Assert.Contains("x:Key=\"ModernTitleBarMinimizeIconGeometry\"", chromeXaml);
+        Assert.Contains("x:Key=\"ModernTitleBarMaximizeIconGeometry\"", chromeXaml);
+        Assert.Contains("x:Key=\"ModernTitleBarWindowedIconGeometry\"", chromeXaml);
+        Assert.Contains("x:Key=\"ModernTitleBarCloseIconGeometry\"", chromeXaml);
+        Assert.Contains("BasedOn=\"{StaticResource ModernDialogSurfaceStyle}\"", chromeXaml);
+        Assert.Contains("Property=\"CornerRadius\" Value=\"0\"", chromeXaml);
         Assert.Contains("FocusVisualStyle", chromeXaml);
         Assert.Contains("{x:Null}", chromeXaml);
         Assert.Contains("Styles/ModernWindowChrome.xaml", appXaml);

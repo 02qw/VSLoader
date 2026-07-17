@@ -1,6 +1,6 @@
 ﻿{
-    "version":  "3.3.5",
-    "packageFile":  "VSLoader_3.3.5_win-x64.zip",
-    "sha256":  "0316a913527fd3d2c9d86a967208f80e10e141f01ea409edc6e40ba6d17731b4",
-    "releaseNotes":  "\n更新日志:\n-自动登录AdminUI\n-独立地图和主程序窗口\n-优化更新逻辑\n-优化主界面列排布\u0026调整显示顺序\n-log日志写入设置2000条上限\n-修改AdminUI密码为明文配置\n-优化更新按钮提示样式\n-修复地图关闭后无法恢复状态\n-修复地图全屏模式和窗口模式的最下角状态不一致现象\n"
+    "version":  "4.0.0",
+    "packageFile":  "VSLoader_4.0.0_win-x64.zip",
+    "sha256":  "9f171b3b6327a6154af9acde35ad864c4bd721fd67e9156a59f8b357bbb81f78",
+    "releaseNotes":  "\n更新日志:\n-V4.0.0\n-增加自定义基础能力\n-优化地图实现\n-修复主界面搜索bug\n-优化已知bug\n\n"
 }

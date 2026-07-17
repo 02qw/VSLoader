@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using VSLoader.Services;
 using VSLoader.ViewModels;
 
@@ -14,6 +15,12 @@ public partial class SettingsWindow : Window
         Owner = System.Windows.Application.Current.MainWindow;
         PreviewKeyDown += SettingsWindow_PreviewKeyDown;
         PreviewMouseDown += SettingsWindow_PreviewMouseDown;
+        viewModel.EditContextMenuCapability = definition =>
+        {
+            var editorViewModel = new ContextMenuCapabilityEditorViewModel(definition, new DialogService());
+            var editorWindow = new ContextMenuCapabilityEditorWindow(editorViewModel, this);
+            return editorWindow.ShowDialog() == true ? editorViewModel.Result : null;
+        };
         viewModel.RequestClose += result =>
         {
             DialogResult = result;
@@ -34,13 +41,36 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var targetOffset = CalculateWheelScrollOffset(
-            SettingsScrollViewer.VerticalOffset,
-            e.Delta,
-            SettingsScrollViewer.ScrollableHeight);
+        var scrollViewer = FindAncestorScrollViewer(sender as DependencyObject);
+        if (scrollViewer is null)
+        {
+            return;
+        }
 
-        SettingsScrollViewer.ScrollToVerticalOffset(targetOffset);
+        var targetOffset = CalculateWheelScrollOffset(
+            scrollViewer.VerticalOffset,
+            e.Delta,
+            scrollViewer.ScrollableHeight);
+
+        scrollViewer.ScrollToVerticalOffset(targetOffset);
         e.Handled = true;
+    }
+
+    private static System.Windows.Controls.ScrollViewer? FindAncestorScrollViewer(DependencyObject? source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is System.Windows.Controls.ScrollViewer scrollViewer
+                && string.Equals(scrollViewer.Tag as string, "SettingsPage", StringComparison.Ordinal))
+            {
+                return scrollViewer;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
     }
 
     private void SettingsWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

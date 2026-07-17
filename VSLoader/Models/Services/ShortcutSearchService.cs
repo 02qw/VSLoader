@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using FirstPinyinWordsHelper = ToolGood.Words.FirstPinyin.WordsHelper;
 using FullPinyinWordsHelper = ToolGood.Words.Pinyin.WordsHelper;
@@ -6,6 +7,8 @@ namespace VSLoader.Services;
 
 public sealed class ShortcutSearchService
 {
+    private readonly ConcurrentDictionary<string, SearchIndex> searchIndexCache = new(StringComparer.Ordinal);
+
     public bool IsTextMatch(string source, string keyword)
     {
         if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(keyword))
@@ -18,12 +21,18 @@ public sealed class ShortcutSearchService
             return true;
         }
 
+        var normalizedKeyword = NormalizeForPinyinSearch(keyword);
+        if (normalizedKeyword.Length == 0 || ContainsCjkCharacter(keyword))
+        {
+            return false;
+        }
+
         try
         {
-            var normalizedKeyword = NormalizeForPinyinSearch(keyword);
+            var searchIndex = searchIndexCache.GetOrAdd(source, CreateSearchIndex);
 
-            return IsInitialsMatch(source, normalizedKeyword)
-                || IsFullPinyinMatch(source, normalizedKeyword);
+            return searchIndex.Initials.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase)
+                || searchIndex.FullPinyin.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
@@ -31,22 +40,29 @@ public sealed class ShortcutSearchService
         }
     }
 
-    private static bool IsInitialsMatch(string source, string normalizedKeyword)
+    private static SearchIndex CreateSearchIndex(string source)
     {
-        var sourceInitials = NormalizeForPinyinSearch(FirstPinyinWordsHelper.GetFirstPinyin(source));
-
-        return sourceInitials.Length > 0
-            && normalizedKeyword.Length > 0
-            && sourceInitials.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase);
+        return new SearchIndex(
+            NormalizeForPinyinSearch(FirstPinyinWordsHelper.GetFirstPinyin(source)),
+            NormalizeForPinyinSearch(FullPinyinWordsHelper.GetPinyin(source, false)));
     }
 
-    private static bool IsFullPinyinMatch(string source, string normalizedKeyword)
+    private static bool ContainsCjkCharacter(string value)
     {
-        var sourcePinyin = NormalizeForPinyinSearch(FullPinyinWordsHelper.GetPinyin(source, false));
+        foreach (var rune in value.EnumerateRunes())
+        {
+            var codePoint = rune.Value;
+            if ((codePoint >= 0x3400 && codePoint <= 0x4DBF)
+                || (codePoint >= 0x4E00 && codePoint <= 0x9FFF)
+                || (codePoint >= 0xF900 && codePoint <= 0xFAFF)
+                || (codePoint >= 0x20000 && codePoint <= 0x3134F)
+                || (codePoint >= 0x2F800 && codePoint <= 0x2FA1F))
+            {
+                return true;
+            }
+        }
 
-        return sourcePinyin.Length > 0
-            && normalizedKeyword.Length > 0
-            && sourcePinyin.Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase);
+        return false;
     }
 
     private static string NormalizeForPinyinSearch(string value)
@@ -69,4 +85,6 @@ public sealed class ShortcutSearchService
 
         return builder.ToString();
     }
+
+    private sealed record SearchIndex(string Initials, string FullPinyin);
 }

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using VSLoader.Models;
 
 namespace VSLoader.Services;
@@ -6,7 +7,7 @@ namespace VSLoader.Services;
 public sealed class AdminUiAutoPasteLogService
 {
     private const string LogFileName = "adminui-autopaste.log";
-
+    private static readonly AsyncLocal<long?> CurrentSessionId = new();
     private readonly string logDirectory;
 
     public AdminUiAutoPasteLogService()
@@ -22,125 +23,74 @@ public sealed class AdminUiAutoPasteLogService
         this.logDirectory = logDirectory;
     }
 
-    public void LogStart(AdminUiConfig config)
+    public IDisposable BeginSession(long sessionId)
     {
-        WriteLine($"[Start] enabled={config.AutoPastePasswordEnabled} titleKeyword=\"{Escape(config.AutoPasteWindowTitleKeyword)}\" processNames=\"{Escape(config.AutoPasteProcessNames)}\" timeoutSeconds={config.AutoPasteTimeoutSeconds} initialDelayMs={config.AutoPasteInitialDelayMilliseconds} pollIntervalMs={config.AutoPastePollIntervalMilliseconds}");
+        return new SessionScope(sessionId);
     }
 
-    public void LogPoll(ForegroundWindowInfo? window, bool titleMatch, bool processMatch, bool classMatch = true)
+    public void LogTaskStart(long sessionId, AdminUiConfig config, int passwordLength)
     {
-        if (window is null)
-        {
-            WriteLine($"[Poll] window=null titleMatch={titleMatch} processMatch={processMatch} classMatch={classMatch}");
-            return;
-        }
-
-        WriteLine($"[Poll] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\" titleMatch={titleMatch} processMatch={processMatch} classMatch={classMatch}");
+        WriteLine($"[TaskStart] sessionId={sessionId} timeoutSeconds={config.AutoPasteTimeoutSeconds} pollIntervalMs={AdminUiAutoPasteService.ForegroundPollIntervalMilliseconds} textLength={passwordLength}");
     }
 
-    public void LogWindowScanStart(int candidateCount)
+    public void LogTaskCancel(long sessionId, string reason)
     {
-        WriteLine($"[WindowScanStart] candidateCount={candidateCount}");
+        WriteLine($"[TaskCancel] sessionId={sessionId} reason=\"{Escape(reason)}\"");
     }
 
-    public void LogWindowCandidate(ForegroundWindowInfo window, bool titleMatch, bool processMatch, bool classMatch)
+    public void LogClipboardFallbackStart(long sessionId, AdminUiAutoLoginStatus status, int textLength)
     {
-        WriteLine($"[WindowCandidate] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\" titleMatch={titleMatch} processMatch={processMatch} classMatch={classMatch}");
+        WriteLine($"[ClipboardFallbackStart] sessionId={sessionId} reasonStatus=\"{status}\" textLength={textLength}");
     }
 
-    public void LogWindowMatch(ForegroundWindowInfo window)
+    public void LogClipboardFallbackCompleted(long sessionId)
     {
-        WriteLine($"[WindowMatch] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\"");
+        WriteLine($"[ClipboardFallbackCompleted] sessionId={sessionId} success=True");
     }
 
-    public void LogWindowScanEnd(int candidateCount, int matchCount)
+    public void LogClipboardFallbackFailed(long sessionId, string message)
     {
-        WriteLine($"[WindowScanEnd] candidateCount={candidateCount} matchCount={matchCount}");
+        WriteLine($"[ClipboardFallbackFailed] sessionId={sessionId} success=False message=\"{Escape(message)}\"");
     }
 
-    public void LogSend(ForegroundWindowInfo window)
+    public void LogTaskCompleted(long sessionId, AdminUiAutoLoginStatus status, string message)
     {
-        WriteLine($"[Send] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\"");
+        WriteLine($"[TaskCompleted] sessionId={sessionId} status=\"{status}\" message=\"{Escape(message)}\"");
     }
 
-    public void LogSendCompleted(ForegroundWindowInfo window)
+    public void LogDialogMatched(ForegroundWindowInfo window, long elapsedMilliseconds)
     {
-        WriteLine($"[SendCompleted] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\"");
+        WriteLine($"[DialogMatched] handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\" elapsedMs={elapsedMilliseconds}");
     }
 
-    public void LogClipboardCheck(int expectedLength, int clipboardLength, bool matchesExpectedText)
+    public void LogStabilityCheck(ForegroundWindowInfo targetWindow, ForegroundWindowInfo? actualWindow, bool matched)
     {
-        WriteLine($"[ClipboardCheck] expectedLength={expectedLength} clipboardLength={clipboardLength} matchesExpectedText={matchesExpectedText}");
+        WriteLine($"[StabilityCheck] expectedHandle={targetWindow.Handle} actualHandle={actualWindow?.Handle ?? IntPtr.Zero} matched={matched}");
     }
 
-    internal void LogStage(AdminUiAutoPasteStage stage, ForegroundWindowInfo targetWindow, string reason = "")
+    public void LogInputStart(ForegroundWindowInfo targetWindow, int textLength)
     {
-        var reasonPart = string.IsNullOrWhiteSpace(reason)
-            ? string.Empty
-            : $" reason=\"{Escape(reason)}\"";
-        WriteLine($"[Stage] stage=\"{stage}\" targetHandle={targetWindow.Handle} title=\"{Escape(targetWindow.Title)}\" process=\"{Escape(targetWindow.ProcessName)}\" class=\"{Escape(targetWindow.ClassName)}\"{reasonPart}");
+        WriteLine($"[InputStart] targetHandle={targetWindow.Handle} textLength={textLength}");
     }
 
-    internal void LogFocusCheck(AdminUiAutoPasteStage stage, ForegroundWindowInfo targetWindow, ForegroundWindowInfo? actualWindow, bool matched)
+    public void LogTextSent(uint requestedInputCount, uint sentInputCount, long elapsedMilliseconds, int nativeErrorCode)
     {
-        if (actualWindow is null)
-        {
-            WriteLine($"[FocusCheck] stage=\"{stage}\" expectedHandle={targetWindow.Handle} actualHandle=0 matched={matched} actualTitle=\"\" actualProcess=\"\" actualClass=\"\"");
-            return;
-        }
-
-        WriteLine($"[FocusCheck] stage=\"{stage}\" expectedHandle={targetWindow.Handle} actualHandle={actualWindow.Handle} matched={matched} actualTitle=\"{Escape(actualWindow.Title)}\" actualProcess=\"{Escape(actualWindow.ProcessName)}\" actualClass=\"{Escape(actualWindow.ClassName)}\"");
+        WriteLine($"[TextSent] requested={requestedInputCount} sent={sentInputCount} success={sentInputCount == requestedInputCount} elapsedMs={elapsedMilliseconds} nativeErrorCode={nativeErrorCode}");
     }
 
-    internal void LogFocusRetry(AdminUiAutoPasteStage stage, ForegroundWindowInfo targetWindow, int attempt, bool setForegroundResult)
+    public void LogFocusLost(string stage, ForegroundWindowInfo targetWindow, ForegroundWindowInfo? actualWindow)
     {
-        WriteLine($"[FocusRetry] stage=\"{stage}\" targetHandle={targetWindow.Handle} attempt={attempt} setForegroundResult={setForegroundResult}");
+        WriteLine($"[FocusLost] stage=\"{Escape(stage)}\" expectedHandle={targetWindow.Handle} actualHandle={actualWindow?.Handle ?? IntPtr.Zero}");
     }
 
-    internal void LogFocusRetryResult(AdminUiAutoPasteStage stage, ForegroundWindowInfo targetWindow, bool success, int attempts, long elapsedMilliseconds)
+    public void LogEnterSent(uint requestedInputCount, uint sentInputCount, long elapsedMilliseconds, int nativeErrorCode)
     {
-        WriteLine($"[FocusRetryResult] stage=\"{stage}\" targetHandle={targetWindow.Handle} success={success} attempts={attempts} elapsedMs={elapsedMilliseconds}");
+        WriteLine($"[EnterSent] requested={requestedInputCount} sent={sentInputCount} success={sentInputCount == requestedInputCount} elapsedMs={elapsedMilliseconds} nativeErrorCode={nativeErrorCode}");
     }
 
-    internal void LogInputBlock(ForegroundWindowInfo targetWindow, bool requestedBlock, bool success, int nativeErrorCode = 0)
+    public void LogTimeout(long elapsedMilliseconds)
     {
-        WriteLine($"[InputBlock] targetHandle={targetWindow.Handle} requestedBlock={requestedBlock} success={success} nativeErrorCode={nativeErrorCode}");
-    }
-
-    internal void LogInputProtection(ForegroundWindowInfo targetWindow, string mode, bool success, int nativeErrorCode = 0)
-    {
-        WriteLine($"[InputProtection] targetHandle={targetWindow.Handle} mode=\"{Escape(mode)}\" success={success} nativeErrorCode={nativeErrorCode}");
-    }
-
-    public void LogKeyboardPlan(ForegroundWindowInfo targetWindow, int focusSettleMilliseconds, int pasteBeforeEnterDelayMilliseconds, int inputStructSize)
-    {
-        WriteLine($"[KeyboardPlan] targetHandle={targetWindow.Handle} title=\"{Escape(targetWindow.Title)}\" process=\"{Escape(targetWindow.ProcessName)}\" class=\"{Escape(targetWindow.ClassName)}\" shortcuts=\"Ctrl+V,Enter\" focusSettleMs={focusSettleMilliseconds} pasteBeforeEnterDelayMs={pasteBeforeEnterDelayMilliseconds} inputStructSize={inputStructSize}");
-    }
-
-    public void LogKeyboardForeground(string stage, ForegroundWindowInfo? window)
-    {
-        if (window is null)
-        {
-            WriteLine($"[KeyboardForeground] stage=\"{Escape(stage)}\" window=null");
-            return;
-        }
-
-        WriteLine($"[KeyboardForeground] stage=\"{Escape(stage)}\" handle={window.Handle} title=\"{Escape(window.Title)}\" process=\"{Escape(window.ProcessName)}\" class=\"{Escape(window.ClassName)}\"");
-    }
-
-    public void LogKeyboardStep(string step, string shortcut, uint requestedInputCount, uint sentInputCount, long elapsedMilliseconds, int nativeErrorCode)
-    {
-        WriteLine($"[KeyboardStep] step=\"{Escape(step)}\" shortcut=\"{Escape(shortcut)}\" requested={requestedInputCount} sent={sentInputCount} success={sentInputCount == requestedInputCount} elapsedMs={elapsedMilliseconds} nativeErrorCode={nativeErrorCode}");
-    }
-
-    public void LogKeyboardDelay(string reason, int delayMilliseconds)
-    {
-        WriteLine($"[KeyboardDelay] reason=\"{Escape(reason)}\" delayMs={delayMilliseconds}");
-    }
-
-    public void LogTimeout(string message)
-    {
-        WriteLine($"[Timeout] message=\"{Escape(message)}\"");
+        WriteLine($"[Timeout] elapsedMs={elapsedMilliseconds}");
     }
 
     public void LogError(Exception exception)
@@ -156,13 +106,25 @@ public sealed class AdminUiAutoPasteLogService
         try
         {
             Directory.CreateDirectory(logDirectory);
-            var filePath = Path.Combine(logDirectory, LogFileName);
-            RollingLogFileWriter.Append(filePath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}");
+            RollingLogFileWriter.Append(
+                Path.Combine(logDirectory, LogFileName),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {ApplySessionId(message)}");
         }
         catch
         {
             // Diagnostic logging must never break the AdminUI launch flow.
         }
+    }
+
+    private static string ApplySessionId(string message)
+    {
+        var sessionId = CurrentSessionId.Value;
+        if (sessionId is null || message.Contains("sessionId=", StringComparison.Ordinal))
+        {
+            return message;
+        }
+
+        return $"sessionId={sessionId.Value} {message}";
     }
 
     private static string Escape(string? value)
@@ -172,5 +134,28 @@ public sealed class AdminUiAutoPasteLogService
             .Replace("\"", "\\\"", StringComparison.Ordinal)
             .Replace("\r", "\\r", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);
+    }
+
+    private sealed class SessionScope : IDisposable
+    {
+        private readonly long? previousSessionId;
+        private bool disposed;
+
+        public SessionScope(long sessionId)
+        {
+            previousSessionId = CurrentSessionId.Value;
+            CurrentSessionId.Value = sessionId;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            CurrentSessionId.Value = previousSessionId;
+        }
     }
 }

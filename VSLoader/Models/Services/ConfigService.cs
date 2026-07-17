@@ -44,6 +44,7 @@ public sealed class ConfigService
         if (!File.Exists(ConfigPath))
         {
             var defaultConfig = new AppConfig();
+            NormalizeConfig(defaultConfig);
             var saveResult = Save(defaultConfig);
             return saveResult.Success
                 ? new ConfigLoadResult(defaultConfig, true, null)
@@ -73,6 +74,7 @@ public sealed class ConfigService
             config.BatchImport ??= new BatchImportConfig();
             config.WebUi ??= new WebUiConfig();
             config.UpdateCheck ??= new UpdateCheckConfig();
+            config.ContextMenuCapabilities ??= new ContextMenuCapabilityCollectionConfig();
             NormalizeConfig(config);
 
             return new ConfigLoadResult(config, true, null);
@@ -128,9 +130,11 @@ public sealed class ConfigService
         config.BatchImport ??= new BatchImportConfig();
         config.WebUi ??= new WebUiConfig();
         config.UpdateCheck ??= new UpdateCheckConfig();
+        config.ContextMenuCapabilities ??= new ContextMenuCapabilityCollectionConfig();
         config.Shortcuts ??= new List<ShortcutItem>();
         NormalizeAdminUiAutoPasteConfig(config.AdminUi);
         NormalizeMapHotkeyConfig(config.MapHotkey);
+        _ = new ContextMenuCapabilityConfigService().Normalize(config.ContextMenuCapabilities);
 
         foreach (var shortcut in config.Shortcuts)
         {
@@ -160,18 +164,6 @@ public sealed class ConfigService
             : processNames;
 
         adminUi.AutoPasteTimeoutSeconds = Math.Clamp(adminUi.AutoPasteTimeoutSeconds, 1, 60);
-        if (adminUi.AutoPasteInitialDelayMilliseconds is 2500 or 800 or 200 or 100)
-        {
-            adminUi.AutoPasteInitialDelayMilliseconds = 0;
-        }
-
-        if (adminUi.AutoPastePollIntervalMilliseconds is 300 or 150)
-        {
-            adminUi.AutoPastePollIntervalMilliseconds = 50;
-        }
-
-        adminUi.AutoPasteInitialDelayMilliseconds = Math.Clamp(adminUi.AutoPasteInitialDelayMilliseconds, 0, 30000);
-        adminUi.AutoPastePollIntervalMilliseconds = Math.Clamp(adminUi.AutoPastePollIntervalMilliseconds, 50, 2000);
     }
 
     private static void NormalizeMapHotkeyConfig(MapHotkeyConfig mapHotkey)

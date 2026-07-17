@@ -14,163 +14,73 @@ public sealed class AdminUiAutoPasteLogServiceTests : IDisposable
     }
 
     [Fact]
-    public void LogStart_creates_log_with_safe_config_details()
+    public void Event_logs_include_session_and_never_include_plain_password()
     {
         var service = new AdminUiAutoPasteLogService(rootPath);
+        var target = CreateDialog(123);
 
-        service.LogStart(new AdminUiConfig
+        service.LogTaskStart(42, new AdminUiConfig { AutoPasteTimeoutSeconds = 8 }, passwordLength: 6);
+        using (service.BeginSession(42))
         {
-            AutoPastePasswordEnabled = true,
-            AutoPasteWindowTitleKeyword = "processor"
-        });
+            service.LogDialogMatched(target, elapsedMilliseconds: 120);
+            service.LogInputStart(target, textLength: 6);
+            service.LogTextSent(requestedInputCount: 12, sentInputCount: 12, elapsedMilliseconds: 1, nativeErrorCode: 0);
+            service.LogEnterSent(requestedInputCount: 2, sentInputCount: 2, elapsedMilliseconds: 1, nativeErrorCode: 0);
+        }
+        service.LogTaskCompleted(42, AdminUiAutoLoginStatus.InputSubmitted, "completed");
 
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[Start]", log);
-        Assert.Contains("titleKeyword=\"processor\"", log);
-        Assert.DoesNotContain("password", log, StringComparison.OrdinalIgnoreCase);
+        var log = File.ReadAllText(LogPath);
+        Assert.Contains("[TaskStart]", log);
+        Assert.Contains("sessionId=42", log);
+        Assert.Contains("[DialogMatched]", log);
+        Assert.Contains("[InputStart]", log);
+        Assert.Contains("[TextSent]", log);
+        Assert.Contains("[EnterSent]", log);
+        Assert.Contains("status=\"InputSubmitted\"", log);
+        Assert.DoesNotContain("secret", log, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void LogPoll_writes_window_title_process_and_match_flags()
+    public void Focus_loss_and_timeout_are_event_logs_without_poll_noise()
     {
         var service = new AdminUiAutoPasteLogService(rootPath);
+        var target = CreateDialog(123);
+        var other = new ForegroundWindowInfo { Handle = new IntPtr(456), Title = "Other", ProcessName = "chrome", ClassName = "Chrome_WidgetWin_1" };
 
-        service.LogPoll(
-            new ForegroundWindowInfo
-            {
-                Handle = new IntPtr(123),
-                Title = "TAOI008.processor",
-                ProcessName = "javaw",
-                ClassName = "SunAwtFrame"
-            },
-            titleMatch: true,
-            processMatch: true);
-
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[Poll]", log);
-        Assert.Contains("title=\"TAOI008.processor\"", log);
-        Assert.Contains("process=\"javaw\"", log);
-        Assert.Contains("class=\"SunAwtFrame\"", log);
-        Assert.Contains("titleMatch=True", log);
-        Assert.Contains("processMatch=True", log);
-    }
-
-    [Fact]
-    public void LogKeyboardStep_writes_shortcut_timing_and_result_without_sensitive_text()
-    {
-        var service = new AdminUiAutoPasteLogService(rootPath);
-
-        service.LogKeyboardStep("SendInput", "Ctrl+V", requestedInputCount: 4, sentInputCount: 4, elapsedMilliseconds: 12, nativeErrorCode: 0);
-        service.LogClipboardCheck(expectedLength: 8, clipboardLength: 8, matchesExpectedText: true);
-
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[KeyboardStep]", log);
-        Assert.Contains("step=\"SendInput\"", log);
-        Assert.Contains("shortcut=\"Ctrl+V\"", log);
-        Assert.Contains("requested=4", log);
-        Assert.Contains("sent=4", log);
-        Assert.Contains("elapsedMs=12", log);
-        Assert.Contains("[ClipboardCheck]", log);
-        Assert.Contains("expectedLength=8", log);
-        Assert.Contains("matchesExpectedText=True", log);
-        Assert.DoesNotContain("password", log, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void LogStage_writes_stage_target_and_reason()
-    {
-        var service = new AdminUiAutoPasteLogService(rootPath);
-
-        service.LogStage(
-            AdminUiAutoPasteStage.BeforePaste,
-            new ForegroundWindowInfo
-            {
-                Handle = new IntPtr(123),
-                Title = "TAOI008.processor",
-                ProcessName = "javaw",
-                ClassName = "SunAwtDialog"
-            },
-            "focus check");
-
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[Stage]", log);
-        Assert.Contains("stage=\"BeforePaste\"", log);
-        Assert.Contains("targetHandle=123", log);
-        Assert.Contains("class=\"SunAwtDialog\"", log);
-        Assert.Contains("reason=\"focus check\"", log);
-    }
-
-    [Fact]
-    public void LogFocusCheck_writes_expected_actual_and_match_result()
-    {
-        var service = new AdminUiAutoPasteLogService(rootPath);
-
-        service.LogFocusCheck(
-            AdminUiAutoPasteStage.BeforeEnter,
-            new ForegroundWindowInfo { Handle = new IntPtr(123), Title = "TAOI008.processor", ProcessName = "javaw", ClassName = "SunAwtDialog" },
-            new ForegroundWindowInfo { Handle = new IntPtr(456), Title = "Other", ProcessName = "chrome", ClassName = "Chrome_WidgetWin_1" },
-            matched: false);
-
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[FocusCheck]", log);
-        Assert.Contains("stage=\"BeforeEnter\"", log);
-        Assert.Contains("expectedHandle=123", log);
-        Assert.Contains("actualHandle=456", log);
-        Assert.Contains("matched=False", log);
-        Assert.Contains("actualClass=\"Chrome_WidgetWin_1\"", log);
-    }
-
-    [Fact]
-    public void LogFocusRetry_writes_retry_stage_attempt_and_result()
-    {
-        var service = new AdminUiAutoPasteLogService(rootPath);
-        var target = new ForegroundWindowInfo
+        using (service.BeginSession(8))
         {
-            Handle = new IntPtr(123),
-            Title = "TAOI008.processor",
-            ProcessName = "javaw",
-            ClassName = "SunAwtDialog"
-        };
+            service.LogStabilityCheck(target, other, matched: false);
+            service.LogFocusLost("BeforeEnter", target, other);
+            service.LogTimeout(elapsedMilliseconds: 12000);
+        }
 
-        service.LogFocusRetry(AdminUiAutoPasteStage.BeforePaste, target, attempt: 2, setForegroundResult: true);
-        service.LogFocusRetryResult(AdminUiAutoPasteStage.BeforePaste, target, success: true, attempts: 2, elapsedMilliseconds: 240);
-
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[FocusRetry]", log);
-        Assert.Contains("stage=\"BeforePaste\"", log);
-        Assert.Contains("targetHandle=123", log);
-        Assert.Contains("attempt=2", log);
-        Assert.Contains("setForegroundResult=True", log);
-        Assert.Contains("[FocusRetryResult]", log);
-        Assert.Contains("success=True", log);
-        Assert.Contains("attempts=2", log);
-        Assert.Contains("elapsedMs=240", log);
+        var log = File.ReadAllText(LogPath);
+        Assert.Contains("[StabilityCheck]", log);
+        Assert.Contains("[FocusLost]", log);
+        Assert.Contains("[Timeout]", log);
+        Assert.DoesNotContain("[Poll]", log);
+        Assert.DoesNotContain("[WindowScan", log);
+        Assert.DoesNotContain("[FocusRetry", log);
+        Assert.DoesNotContain("[InputBlock]", log);
     }
 
     [Fact]
-    public void LogInputProtection_writes_mode_result_and_native_error_without_sensitive_text()
+    public void Clipboard_fallback_logs_result_without_password_text()
     {
         var service = new AdminUiAutoPasteLogService(rootPath);
 
-        service.LogInputProtection(
-            new ForegroundWindowInfo
-            {
-                Handle = new IntPtr(123),
-                Title = "TAOI008.processor",
-                ProcessName = "javaw",
-                ClassName = "SunAwtDialog"
-            },
-            "Overlay",
-            success: true,
-            nativeErrorCode: 0);
+        service.LogClipboardFallbackStart(7, AdminUiAutoLoginStatus.TimedOut, textLength: 6);
+        service.LogClipboardFallbackCompleted(7);
+        service.LogClipboardFallbackFailed(8, "OpenClipboard Failed");
 
-        var log = ReadOnlyLogFile();
-        Assert.Contains("[InputProtection]", log);
-        Assert.Contains("targetHandle=123", log);
-        Assert.Contains("mode=\"Overlay\"", log);
-        Assert.Contains("success=True", log);
-        Assert.Contains("nativeErrorCode=0", log);
-        Assert.DoesNotContain("password", log, StringComparison.OrdinalIgnoreCase);
+        var log = File.ReadAllText(LogPath);
+        Assert.Contains("[ClipboardFallbackStart]", log);
+        Assert.Contains("reasonStatus=\"TimedOut\"", log);
+        Assert.Contains("textLength=6", log);
+        Assert.Contains("[ClipboardFallbackCompleted]", log);
+        Assert.Contains("[ClipboardFallbackFailed]", log);
+        Assert.Contains("OpenClipboard Failed", log);
+        Assert.DoesNotContain("secret", log, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -180,18 +90,15 @@ public sealed class AdminUiAutoPasteLogServiceTests : IDisposable
 
         for (var index = 1; index <= 2001; index++)
         {
-            service.LogTimeout($"message-{index:0000}");
+            service.LogTimeout(index);
         }
 
         var files = Directory.GetFiles(rootPath, "*.log");
         Assert.Single(files);
-        Assert.Equal("adminui-autopaste.log", Path.GetFileName(files[0]));
-
         var lines = File.ReadAllLines(files[0]);
         Assert.Equal(2000, lines.Length);
-        Assert.DoesNotContain(lines, line => line.Contains("message-0001", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("message-0002", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Contains("message-2001", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, line => line.EndsWith("[Timeout] elapsedMs=1", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("elapsedMs=2001", StringComparison.Ordinal));
     }
 
     public void Dispose()
@@ -202,10 +109,16 @@ public sealed class AdminUiAutoPasteLogServiceTests : IDisposable
         }
     }
 
-    private string ReadOnlyLogFile()
+    private string LogPath => Path.Combine(rootPath, "adminui-autopaste.log");
+
+    private static ForegroundWindowInfo CreateDialog(int handle)
     {
-        var files = Directory.GetFiles(rootPath, "adminui-autopaste.log");
-        Assert.Single(files);
-        return File.ReadAllText(files[0]);
+        return new ForegroundWindowInfo
+        {
+            Handle = new IntPtr(handle),
+            Title = "TAOI008.processor",
+            ProcessName = "javaw",
+            ClassName = "SunAwtDialog"
+        };
     }
 }

@@ -12,5 +12,7 @@ public sealed class AppSettings
 
     public bool MigrationCompleted { get; set; }
 
+    public List<string> SettingsPageOrder { get; set; } = new();
+
     public List<WorkspaceInfo> Workspaces { get; set; } = new();
 }

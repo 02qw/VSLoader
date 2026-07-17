@@ -11,10 +11,19 @@
     <SolidColorBrush x:Key="ModernWeakTextBrush" Color="#94A3B8" />
     <SolidColorBrush x:Key="ModernButtonBorderBrush" Color="#D7E0EC" />
     <SolidColorBrush x:Key="ModernButtonHoverBrush" Color="#F4F8FF" />
+    <SolidColorBrush x:Key="ModernFocusBorderBrush" Color="#9DB8E5" />
     <SolidColorBrush x:Key="ModernPrimaryBrush" Color="#2563EB" />
     <SolidColorBrush x:Key="ModernPrimaryHoverBrush" Color="#1D4ED8" />
     <SolidColorBrush x:Key="ModernPrimaryLightBrush" Color="#EAF3FF" />
     <SolidColorBrush x:Key="ModernSelectedBorderBrush" Color="#B8D4FF" />
+    <SolidColorBrush x:Key="ModernActiveButtonBackgroundBrush" Color="#EAF3FF" />
+    <SolidColorBrush x:Key="ModernActiveButtonHoverBrush" Color="#DBEAFE" />
+    <SolidColorBrush x:Key="ModernActiveButtonPressedBrush" Color="#C7DFFE" />
+    <SolidColorBrush x:Key="ModernActiveButtonBorderBrush" Color="#4F8FEF" />
+    <SolidColorBrush x:Key="ModernActiveButtonTextBrush" Color="#1E3A8A" />
+    <SolidColorBrush x:Key="ModernSuccessBrush" Color="#16A34A" />
+    <SolidColorBrush x:Key="ModernSuccessHoverBrush" Color="#15803D" />
+    <SolidColorBrush x:Key="ModernSuccessPressedBrush" Color="#166534" />
     <SolidColorBrush x:Key="ModernDangerBrush" Color="#DC2626" />
     <SolidColorBrush x:Key="ModernDangerHoverBrush" Color="#FEF2F2" />
     <SolidColorBrush x:Key="ModernDangerBorderBrush" Color="#FECACA" />
@@ -55,7 +64,7 @@
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="#F8FBFF" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernPrimaryBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernFocusBorderBrush}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernPrimaryLightBrush}" />
@@ -183,7 +192,7 @@
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="#F8FBFF" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernPrimaryBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernFocusBorderBrush}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernPrimaryLightBrush}" />
@@ -191,8 +200,8 @@
                         <DataTrigger Binding="{Binding HasSoftwareUpdateNotice}" Value="True">
                             <Setter Property="Foreground" Value="White" />
                             <Setter Property="FontWeight" Value="SemiBold" />
-                            <Setter TargetName="Root" Property="Background" Value="#16A34A" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="#15803D" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernSuccessBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernSuccessHoverBrush}" />
                         </DataTrigger>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
@@ -200,8 +209,8 @@
                                 <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
                             </MultiDataTrigger.Conditions>
                             <Setter Property="Foreground" Value="White" />
-                            <Setter TargetName="Root" Property="Background" Value="#15803D" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="#15803D" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernSuccessHoverBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernSuccessHoverBrush}" />
                         </MultiDataTrigger>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
@@ -209,8 +218,8 @@
                                 <Condition Binding="{Binding IsPressed, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
                             </MultiDataTrigger.Conditions>
                             <Setter Property="Foreground" Value="White" />
-                            <Setter TargetName="Root" Property="Background" Value="#166534" />
-                            <Setter TargetName="Root" Property="BorderBrush" Value="#166534" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernSuccessPressedBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernSuccessPressedBrush}" />
                         </MultiDataTrigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Cursor" Value="Arrow" />
@@ -279,6 +288,74 @@
         <Setter Property="MinWidth" Value="72" />
         <Setter Property="Padding" Value="12,0" />
         <Setter Property="FontSize" Value="12" />
+    </Style>
+
+    <Style x:Key="ModernToolbarToggleButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernToolbarButtonStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernButtonHoverBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernSelectedBorderBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernFocusBorderBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernPrimaryLightBrush}" />
+                        </Trigger>
+                        <Trigger Property="Tag" Value="Active">
+                            <Setter Property="Foreground" Value="{StaticResource ModernActiveButtonTextBrush}" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernActiveButtonBackgroundBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernActiveButtonBorderBrush}" />
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Tag" Value="Active" />
+                                <Condition Property="IsMouseOver" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{StaticResource ModernActiveButtonTextBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernActiveButtonHoverBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernActiveButtonBorderBrush}" />
+                        </MultiTrigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Tag" Value="Active" />
+                                <Condition Property="IsPressed" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource ModernActiveButtonPressedBrush}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource ModernActiveButtonBorderBrush}" />
+                        </MultiTrigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Setter Property="Foreground" Value="{StaticResource ModernWeakTextBrush}" />
+                            <Setter TargetName="Root" Property="Background" Value="#F8FAFC" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="#E5EAF2" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ModernSettingsIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+        <Setter Property="Width" Value="42" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="MinWidth" Value="42" />
+        <Setter Property="Padding" Value="0" />
     </Style>
 
     <Style x:Key="ModernIconButtonStyle" TargetType="Button">
@@ -439,7 +516,6 @@
                             CornerRadius="6"
                             SnapsToDevicePixels="True">
                         <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="10,0"
                                       VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -475,8 +551,7 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="6"
                             SnapsToDevicePixels="True">
-                        <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="10,8" />
+                        <ScrollViewer x:Name="PART_ContentHost" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocusWithin" Value="True">
@@ -512,7 +587,6 @@
                             CornerRadius="6"
                             SnapsToDevicePixels="True">
                         <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="10,0"
                                       VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>

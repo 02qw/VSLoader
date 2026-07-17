@@ -20,6 +20,8 @@ public sealed class GlobalConfigImportResult
 
     public bool RequiresMapWindowReload { get; set; }
 
+    public bool RequiresWindowLayoutReload { get; set; }
+
     public static GlobalConfigImportResult Ok()
     {
         return new GlobalConfigImportResult(true, null);

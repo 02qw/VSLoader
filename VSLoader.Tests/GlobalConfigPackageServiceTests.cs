@@ -32,7 +32,230 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
     }
 
     [Fact]
-    public void Export_writes_workspace_config_program_settings_and_factory_map_layout()
+    public void Export_writes_schema2_workspace_snapshot_without_legacy_update_fields()
+    {
+        var layoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(layoutPath, new FactoryMapLayoutConfig
+        {
+            Version = 5,
+            Devices = [new FactoryMapDeviceNode { Id = "node-a", Key = @"C:\Line\A", Name = "设备A" }]
+        });
+        WriteJson(Path.Combine(_workspacePath, "workspace.json"), new WorkspaceMetadata
+        {
+            Id = "work1",
+            Name = "一号产线"
+        });
+        WriteJson(Path.Combine(_workspacePath, "window-layout.json"), new WindowLayoutConfig
+        {
+            MainWindow = new WindowBoundsConfig { Left = 10, Top = 20, Width = 1200, Height = 800 },
+            FactoryMapWindowState = FactoryMapWindowStateKinds.WorkspaceMaximized,
+            FactoryMapView = new FactoryMapViewStateConfig
+            {
+                FitScale = 0.8,
+                UserScale = 1.25,
+                OffsetX = -120,
+                OffsetY = 80
+            },
+            ShortcutGridColumns = new ShortcutGridColumnLayoutConfig
+            {
+                Name = 220,
+                Description = 300,
+                SourceModuleName = 180,
+                UpdatedAt = 160
+            }
+        });
+        var config = new AppConfig
+        {
+            VSCodePath = @"C:\legacy\Code.exe",
+            Shortcuts = [new ShortcutItem { Name = "设备A", TargetPath = @"C:\Line\A" }],
+            AdminUi = new AdminUiConfig { ProtectedPassword = "plain-password" },
+            UpdateCheck = new UpdateCheckConfig
+            {
+                GlobalConfigPackagePath = @"\\server\VSLoader_GlobalConfig.json",
+                RulesFilePath = @"\\server\rules.csv",
+                MapFilePath = @"\\server\map.json",
+                SoftwareVersionFilePath = @"\\server\version.txt"
+            }
+        };
+        var settings = new AppSettings
+        {
+            VSCodePath = @"C:\Tools\Code.exe",
+            SoftwareUpdateManifestPath = @"\\server\manifest.json",
+            SettingsPageOrder = ["hotkeys", "general", "adminUi", "webUi", "updates", "contextMenuCapabilities"]
+        };
+
+        var result = _service.Export(_packagePath, config, settings, layoutPath);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Contains(result.Warnings, warning => warning.Contains("明文密码", StringComparison.Ordinal));
+        using var document = JsonDocument.Parse(File.ReadAllText(_packagePath));
+        var root = document.RootElement;
+        Assert.Equal(2, root.GetProperty("SchemaVersion").GetInt32());
+        Assert.False(root.TryGetProperty("ProgramSettings", out _));
+        Assert.False(root.TryGetProperty("WorkspaceConfig", out _));
+        Assert.False(root.TryGetProperty("FactoryMapLayout", out _));
+
+        var workspace = root.GetProperty("Workspace");
+        Assert.Equal("一号产线", workspace.GetProperty("Source").GetProperty("Name").GetString());
+        Assert.Single(workspace.GetProperty("Settings").GetProperty("Shortcuts").EnumerateArray());
+        var updateCheck = workspace.GetProperty("Settings").GetProperty("UpdateCheck");
+        Assert.Equal(@"\\server\VSLoader_GlobalConfig.json", updateCheck.GetProperty("GlobalConfigPackagePath").GetString());
+        Assert.False(updateCheck.TryGetProperty("RulesFilePath", out _));
+        Assert.False(updateCheck.TryGetProperty("MapFilePath", out _));
+        Assert.False(updateCheck.TryGetProperty("SoftwareVersionFilePath", out _));
+
+        var preferences = workspace.GetProperty("InterfacePreferences");
+        Assert.Equal(1.25, preferences.GetProperty("FactoryMapView").GetProperty("UserScale").GetDouble());
+        Assert.Equal(220, preferences.GetProperty("ShortcutGridColumns").GetProperty("Name").GetDouble());
+        Assert.Equal("hotkeys", preferences.GetProperty("SettingsPageOrder")[0].GetString());
+        Assert.Equal(@"C:\Tools\Code.exe", root.GetProperty("MachineSettings").GetProperty("VSCodePath").GetString());
+    }
+
+    [Fact]
+    public void Import_schema2_merges_portable_interface_preferences_without_overwriting_window_bounds()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        var currentWindowLayoutPath = Path.Combine(_workspacePath, "window-layout.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        WriteJson(currentWindowLayoutPath, new WindowLayoutConfig
+        {
+            MainWindow = new WindowBoundsConfig { Left = 100, Top = 110, Width = 1000, Height = 700 },
+            FactoryMapWindow = new WindowBoundsConfig { Left = 200, Top = 210, Width = 900, Height = 650 },
+            WasFactoryMapOpen = true,
+            FactoryMapWindowState = FactoryMapWindowStateKinds.Normal,
+            FactoryMapView = new FactoryMapViewStateConfig { FitScale = 1, UserScale = 1, OffsetX = 0, OffsetY = 0 }
+        });
+        WriteJson(_packagePath, new
+        {
+            SchemaVersion = 2,
+            AppName = "VSLoader",
+            ExportedAt = DateTimeOffset.Now.ToString("O"),
+            Workspace = new
+            {
+                Source = new { Id = "source", Name = "来源工作区" },
+                Settings = new
+                {
+                    Shortcuts = new[] { new ShortcutItem { Name = "新设备", TargetPath = @"C:\New" } },
+                    AdminUi = new AdminUiConfig(),
+                    Hotkey = new HotkeyConfig(),
+                    MapHotkey = new MapHotkeyConfig(),
+                    BatchImport = new BatchImportConfig(),
+                    WebUi = new WebUiConfig(),
+                    UpdateCheck = new { GlobalConfigPackagePath = string.Empty },
+                    ContextMenuCapabilities = new ContextMenuCapabilityCollectionConfig()
+                },
+                FactoryMapLayout = new FactoryMapLayoutConfig { Version = 5 },
+                InterfacePreferences = new
+                {
+                    SettingsPageOrder = new[] { "hotkeys", "general", "adminUi", "webUi", "updates", "contextMenuCapabilities" },
+                    FactoryMapWindowState = FactoryMapWindowStateKinds.WorkspaceMaximized,
+                    FactoryMapView = new FactoryMapViewStateConfig
+                    {
+                        FitScale = 0.9,
+                        UserScale = 1.4,
+                        OffsetX = -300,
+                        OffsetY = 120
+                    },
+                    ShortcutGridColumns = new ShortcutGridColumnLayoutConfig { Name = 260, Description = 320 }
+                }
+            },
+            MachineSettings = new GlobalProgramSettings()
+        });
+        var appSettings = new AppSettings();
+
+        var result = _service.Import(_packagePath, currentConfigPath, currentLayoutPath, appSettings, _ => null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("新设备", ReadJson<AppConfig>(currentConfigPath).Shortcuts.Single().Name);
+        var importedLayout = ReadJson<WindowLayoutConfig>(currentWindowLayoutPath);
+        Assert.Equal(100, importedLayout.MainWindow!.Left);
+        Assert.Equal(900, importedLayout.FactoryMapWindow!.Width);
+        Assert.True(importedLayout.WasFactoryMapOpen);
+        Assert.Equal(FactoryMapWindowStateKinds.WorkspaceMaximized, importedLayout.FactoryMapWindowState);
+        Assert.Equal(1.4, importedLayout.FactoryMapView!.UserScale);
+        Assert.Equal(260, importedLayout.ShortcutGridColumns!.Name);
+        Assert.Equal("hotkeys", appSettings.SettingsPageOrder[0]);
+        Assert.Contains("工作区界面偏好", result.ImportedItems);
+    }
+
+    [Fact]
+    public void Import_schema2_rejects_missing_workspace_settings_without_overwriting_current_config()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(currentConfigPath, new AppConfig
+        {
+            Shortcuts = [new ShortcutItem { Name = "保留项", TargetPath = @"C:\Keep" }]
+        });
+        WriteJson(_packagePath, new
+        {
+            SchemaVersion = 2,
+            AppName = "VSLoader",
+            ExportedAt = DateTimeOffset.Now.ToString("O"),
+            Workspace = new { Source = new { Id = "source", Name = "来源" } },
+            MachineSettings = new GlobalProgramSettings()
+        });
+
+        var result = _service.Import(
+            _packagePath,
+            currentConfigPath,
+            currentLayoutPath,
+            new AppSettings(),
+            _ => null);
+
+        Assert.False(result.Success);
+        Assert.Contains("workspace.settings", result.ErrorMessage);
+        Assert.Equal("保留项", ReadJson<AppConfig>(currentConfigPath).Shortcuts.Single().Name);
+    }
+
+    [Fact]
+    public void Import_schema2_without_interface_preferences_preserves_current_window_layout()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        var currentWindowLayoutPath = Path.Combine(_workspacePath, "window-layout.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        WriteJson(currentWindowLayoutPath, new WindowLayoutConfig
+        {
+            FactoryMapWindowState = FactoryMapWindowStateKinds.WorkspaceMaximized,
+            FactoryMapView = new FactoryMapViewStateConfig
+            {
+                FitScale = 0.8,
+                UserScale = 1.3,
+                OffsetX = -200,
+                OffsetY = 50
+            }
+        });
+        WriteJson(_packagePath, new
+        {
+            SchemaVersion = 2,
+            AppName = "VSLoader",
+            ExportedAt = DateTimeOffset.Now.ToString("O"),
+            Workspace = new
+            {
+                Source = new { Id = "source", Name = "来源" },
+                Settings = new GlobalConfigWorkspaceSettings()
+            },
+            MachineSettings = new GlobalProgramSettings()
+        });
+
+        var result = _service.Import(
+            _packagePath,
+            currentConfigPath,
+            currentLayoutPath,
+            new AppSettings(),
+            _ => null);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var layout = ReadJson<WindowLayoutConfig>(currentWindowLayoutPath);
+        Assert.Equal(FactoryMapWindowStateKinds.WorkspaceMaximized, layout.FactoryMapWindowState);
+        Assert.Equal(1.3, layout.FactoryMapView!.UserScale);
+        Assert.DoesNotContain("工作区界面偏好", result.ImportedItems);
+    }
+
+    [Fact]
+    public void Export_writes_workspace_settings_machine_settings_and_factory_map_layout()
     {
         var config = new AppConfig
         {
@@ -67,15 +290,91 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
 
         Assert.True(result.Success, result.ErrorMessage);
         var package = ReadJson<GlobalConfigPackage>(_packagePath);
-        Assert.Equal(1, package.SchemaVersion);
+        Assert.Equal(2, package.SchemaVersion);
         Assert.Equal("VSLoader", package.AppName);
-        Assert.Equal(@"C:\Tools\Code.exe", package.ProgramSettings.VSCodePath);
-        Assert.Equal(@"\\server\manifest.json", package.ProgramSettings.SoftwareUpdateManifestPath);
-        Assert.Single(package.WorkspaceConfig.Shortcuts);
-        Assert.Equal(@"\\server\rules.csv", package.WorkspaceConfig.BatchImport.LastCsvPath);
-        Assert.Equal(@"\\server\VSLoader_GlobalConfig.json", package.WorkspaceConfig.UpdateCheck.GlobalConfigPackagePath);
-        Assert.NotNull(package.FactoryMapLayout);
-        Assert.Single(package.FactoryMapLayout!.Devices);
+        Assert.Equal(@"C:\Tools\Code.exe", package.MachineSettings!.VSCodePath);
+        Assert.Equal(@"\\server\manifest.json", package.MachineSettings.SoftwareUpdateManifestPath);
+        Assert.Single(package.Workspace!.Settings!.Shortcuts);
+        Assert.Equal(@"\\server\rules.csv", package.Workspace.Settings.BatchImport.LastCsvPath);
+        Assert.Equal(@"\\server\VSLoader_GlobalConfig.json", package.Workspace.Settings.UpdateCheck.GlobalConfigPackagePath);
+        Assert.NotNull(package.Workspace.FactoryMapLayout);
+        Assert.Single(package.Workspace.FactoryMapLayout!.Devices);
+    }
+
+    [Fact]
+    public void Export_and_import_preserve_version5_junction_topology_without_legacy_fields()
+    {
+        var layoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(layoutPath, new FactoryMapLayoutConfig
+        {
+            Version = 5,
+            Devices = [new FactoryMapDeviceNode { Id = "node-a", Key = "A", Name = "设备A", X = 100, Y = 100 }],
+            ConnectionPoints =
+            [
+                new FactoryMapConnectionPoint
+                {
+                    Id = "junction-1",
+                    Kind = FactoryMapConnectionPointKinds.Junction,
+                    JunctionAxis = FactoryMapJunctionAxes.Horizontal,
+                    X = 400,
+                    Y = 129
+                }
+            ],
+            Segments = [new FactoryMapSegment { Id = "segment-1", FromPointId = "node-a:right", ToPointId = "junction-1", ZIndex = 8 }]
+        });
+
+        var exported = _service.Export(_packagePath, new AppConfig(), new AppSettings(), layoutPath);
+
+        Assert.True(exported.Success, exported.ErrorMessage);
+        var packageJson = File.ReadAllText(_packagePath);
+        using var packageDocument = JsonDocument.Parse(packageJson);
+        var layout = packageDocument.RootElement.GetProperty("Workspace").GetProperty("FactoryMapLayout");
+        Assert.Equal(5, layout.GetProperty("Version").GetInt32());
+        Assert.Equal("horizontal", layout.GetProperty("ConnectionPoints")[0].GetProperty("JunctionAxis").GetString());
+        Assert.False(layout.TryGetProperty("Connectors", out _));
+        Assert.False(layout.TryGetProperty("Edges", out _));
+
+        var currentConfigPath = Path.Combine(_otherWorkspacePath, "config.json");
+        var importedLayoutPath = Path.Combine(_otherWorkspacePath, "factory-map.layout.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        var imported = _service.Import(
+            _packagePath,
+            currentConfigPath,
+            importedLayoutPath,
+            new AppSettings(),
+            _ => null);
+
+        Assert.True(imported.Success, imported.ErrorMessage);
+        var importedLayout = ReadJson<FactoryMapLayoutConfig>(importedLayoutPath);
+        Assert.Equal("segment-1", Assert.Single(importedLayout.Segments).Id);
+        Assert.Equal(8, importedLayout.Segments.Single().ZIndex);
+        var importedJunction = Assert.Single(importedLayout.ConnectionPoints);
+        Assert.Equal(FactoryMapConnectionPointKinds.Junction, importedJunction.Kind);
+        Assert.Equal(FactoryMapJunctionAxes.Horizontal, importedJunction.JunctionAxis);
+    }
+
+    [Fact]
+    public void Import_rejects_package_with_future_factory_map_layout_version()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        WritePackage(new GlobalConfigPackage
+        {
+            WorkspaceConfig = new AppConfig(),
+            FactoryMapLayout = new FactoryMapLayoutConfig { Version = 99 }
+        });
+
+        var result = _service.Import(
+            _packagePath,
+            currentConfigPath,
+            currentLayoutPath,
+            new AppSettings(),
+            _ => null);
+
+        Assert.False(result.Success);
+        Assert.Contains("地图布局版本", result.ErrorMessage);
+        Assert.False(File.Exists(currentLayoutPath));
     }
 
     [Fact]
@@ -97,11 +396,63 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
 
         Assert.True(result.Success, result.ErrorMessage);
         var package = ReadJson<GlobalConfigPackage>(_packagePath);
-        Assert.True(package.WorkspaceConfig.MapHotkey.Enabled);
-        Assert.True(package.WorkspaceConfig.MapHotkey.Ctrl);
-        Assert.True(package.WorkspaceConfig.MapHotkey.Alt);
-        Assert.False(package.WorkspaceConfig.MapHotkey.Shift);
-        Assert.Equal("K", package.WorkspaceConfig.MapHotkey.Key);
+        Assert.True(package.Workspace!.Settings!.MapHotkey.Enabled);
+        Assert.True(package.Workspace.Settings.MapHotkey.Ctrl);
+        Assert.True(package.Workspace.Settings.MapHotkey.Alt);
+        Assert.False(package.Workspace.Settings.MapHotkey.Shift);
+        Assert.Equal("K", package.Workspace.Settings.MapHotkey.Key);
+    }
+
+    [Fact]
+    public void Export_and_import_preserve_context_menu_capabilities()
+    {
+        var customCapability = new ContextMenuCapabilityDefinition
+        {
+            Id = "custom-web",
+            Name = "查询设备",
+            Kind = ContextMenuCapabilityKinds.Web,
+            Order = 40,
+            ShowInShortcutList = true,
+            ShowInFactoryMap = false,
+            RequiresExistingTargetPath = false,
+            Web = new WebCapabilityConfig
+            {
+                UrlTemplate = "https://example.com/?name={ShortcutName}"
+            }
+        };
+        var config = new AppConfig
+        {
+            ContextMenuCapabilities = new ContextMenuCapabilityCollectionConfig
+            {
+                Items = ContextMenuCapabilityDefaults.Create().Items
+                    .Concat([customCapability])
+                    .Select(item => item.Clone())
+                    .ToList()
+            }
+        };
+
+        var exported = _service.Export(_packagePath, config, new AppSettings(), string.Empty);
+
+        Assert.True(exported.Success, exported.ErrorMessage);
+        var package = ReadJson<GlobalConfigPackage>(_packagePath);
+        Assert.Contains(package.Workspace!.Settings!.ContextMenuCapabilities.Items, item => item.Id == "custom-web");
+
+        var currentConfigPath = Path.Combine(_otherWorkspacePath, "config.json");
+        WriteJson(currentConfigPath, new AppConfig());
+        var imported = _service.Import(
+            _packagePath,
+            currentConfigPath,
+            Path.Combine(_otherWorkspacePath, "factory-map.layout.json"),
+            new AppSettings(),
+            _ => null);
+
+        Assert.True(imported.Success, imported.ErrorMessage);
+        var importedConfig = ReadJson<AppConfig>(currentConfigPath);
+        var importedCapability = Assert.Single(
+            importedConfig.ContextMenuCapabilities.Items,
+            item => item.Id == "custom-web");
+        Assert.False(importedCapability.ShowInFactoryMap);
+        Assert.Equal("https://example.com/?name={ShortcutName}", importedCapability.Web.UrlTemplate);
     }
 
     [Fact]

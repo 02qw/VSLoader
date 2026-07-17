@@ -27,8 +27,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ShortcutSearchService _shortcutSearchService;
     private readonly PasswordProtectionService _passwordProtectionService;
     private readonly ClipboardService _clipboardService;
-    private readonly AdminUiAutoPasteService _adminUiAutoPasteService;
     private readonly AdminUiAutoPasteLogService _adminUiAutoPasteLogService;
+    private readonly AdminUiAutoLoginCoordinator _adminUiAutoLoginCoordinator;
     private readonly UpdateCheckService _updateCheckService;
     private readonly string _updateTimePath;
     private readonly SoftwareUpdateService _softwareUpdateService;
@@ -37,7 +37,15 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly VSCodePathResolver _vsCodePathResolver;
     private readonly UpdaterRunnerService _updaterRunnerService;
     private readonly string _factoryMapLayoutPath;
+    private readonly string _workspaceId;
+    private readonly string _workspaceDirectory;
+    private readonly ContextMenuCapabilityConfigService _contextMenuCapabilityConfigService;
+    private readonly ContextMenuCapabilityExecutionService _contextMenuCapabilityExecutionService;
+    private readonly ContextMenuCapabilityTrustService _contextMenuCapabilityTrustService;
     private AppConfig _config = new();
+    private CancellationTokenSource? _adminUiClipboardFallbackCancellationTokenSource;
+    private long _lastAdminUiClipboardFallbackSessionId;
+    private bool _adminUiAutomationShutdownRequested;
     private bool _configLoadFailed;
     private bool _hasInvalidConfigFile;
     private int _statusMessageVersion;
@@ -71,7 +79,8 @@ public sealed partial class MainViewModel : ObservableObject
         UpdaterRunnerService? updaterRunnerService = null,
         AdminUiAutoPasteService? adminUiAutoPasteService = null,
         string? factoryMapLayoutPath = null,
-        AdminUiAutoPasteLogService? adminUiAutoPasteLogService = null)
+        AdminUiAutoPasteLogService? adminUiAutoPasteLogService = null,
+        string? workspaceId = null)
     {
         _appSettings = appSettings;
         _appSettingsService = appSettingsService;
@@ -84,8 +93,10 @@ public sealed partial class MainViewModel : ObservableObject
         _shortcutSearchService = shortcutSearchService;
         _passwordProtectionService = passwordProtectionService;
         _clipboardService = clipboardService;
-        _adminUiAutoPasteService = adminUiAutoPasteService ?? new AdminUiAutoPasteService();
         _adminUiAutoPasteLogService = adminUiAutoPasteLogService ?? new AdminUiAutoPasteLogService();
+        _adminUiAutoLoginCoordinator = new AdminUiAutoLoginCoordinator(
+            adminUiAutoPasteService ?? new AdminUiAutoPasteService(),
+            _adminUiAutoPasteLogService);
         _updateCheckService = updateCheckService ?? new UpdateCheckService();
         _updateTimePath = string.IsNullOrWhiteSpace(updateTimePath)
             ? Path.Combine(_configService.ConfigDirectory, "updateTime.json")
@@ -100,6 +111,16 @@ public sealed partial class MainViewModel : ObservableObject
         _factoryMapLayoutPath = string.IsNullOrWhiteSpace(factoryMapLayoutPath)
             ? Path.Combine(_configService.ConfigDirectory, "factory-map.layout.json")
             : factoryMapLayoutPath;
+        _workspaceDirectory = _configService.ConfigDirectory;
+        _workspaceId = string.IsNullOrWhiteSpace(workspaceId)
+            ? Path.GetFileName(_workspaceDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            : workspaceId;
+        _contextMenuCapabilityConfigService = new ContextMenuCapabilityConfigService();
+        _contextMenuCapabilityTrustService = new ContextMenuCapabilityTrustService();
+        _contextMenuCapabilityExecutionService = new ContextMenuCapabilityExecutionService(
+            _dialogService,
+            ExecuteBuiltInContextMenuCapabilityAsync,
+            _contextMenuCapabilityTrustService);
         ShortcutsView = CollectionViewSource.GetDefaultView(Shortcuts);
         ShortcutsView.Filter = FilterShortcut;
         SetCustomSort(ShortcutSortField.Name, ListSortDirection.Ascending);
@@ -111,6 +132,8 @@ public sealed partial class MainViewModel : ObservableObject
     public ICollectionView ShortcutsView { get; }
 
     public event EventHandler? ShortcutsChanged;
+
+    public event EventHandler? WorkspaceLayoutImported;
 
     public HotkeyConfig CurrentHotkey => _config.Hotkey;
 
@@ -234,7 +257,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value)
     {
-        RefreshShortcutsView();
+        RefreshShortcutsView(notifyShortcutsChanged: false);
     }
 
     public void StartUpdateCheckLoop()
@@ -430,6 +453,11 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
+        var manifestPath = _appSettings.SoftwareUpdateManifestPath.Trim();
+        var updateAvailable = false;
+        string? pendingInfoMessage = null;
+        string? pendingErrorMessage = null;
         try
         {
             IsBusy = true;
@@ -439,68 +467,104 @@ public sealed partial class MainViewModel : ObservableObject
             BusyProgressText = "正在读取 manifest...";
             BusyCurrentItemText = string.Empty;
 
-            var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0);
-            var manifestPath = _appSettings.SoftwareUpdateManifestPath.Trim();
             var availability = await _softwareUpdateService.CheckAvailabilityAsync(manifestPath, currentVersion);
             if (!availability.Success)
             {
-                _dialogService.ShowError(availability.ErrorMessage);
-                return;
+                pendingErrorMessage = availability.ErrorMessage;
             }
-
-            if (!availability.UpdateAvailable)
+            else if (!availability.UpdateAvailable)
             {
                 HasSoftwareUpdateNotice = false;
-                _dialogService.ShowInfo(availability.Message);
-                return;
+                pendingInfoMessage = availability.Message;
             }
-
-            if (!_dialogService.Confirm("确定要更新 VSLoader 吗？\n更新过程中主程序会暂时关闭，并由更新器接管。"))
+            else
             {
-                return;
+                updateAvailable = true;
             }
+        }
+        catch (Exception ex)
+        {
+            pendingErrorMessage = $"软件更新失败：{ex.Message}";
+        }
+        finally
+        {
+            ClearBusyState();
+        }
 
+        if (!string.IsNullOrWhiteSpace(pendingErrorMessage))
+        {
+            _dialogService.ShowError(pendingErrorMessage);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pendingInfoMessage))
+        {
+            _dialogService.ShowInfo(pendingInfoMessage);
+            return;
+        }
+
+        if (!updateAvailable)
+        {
+            return;
+        }
+
+        if (!_dialogService.Confirm("确定要更新 VSLoader 吗？\n更新过程中主程序会暂时关闭，并由更新器接管。"))
+        {
+            return;
+        }
+
+        pendingErrorMessage = null;
+        try
+        {
+            IsBusy = true;
             BusyMessage = "正在启动更新器，请稍候...";
+            BusyProgressValue = 0;
+            BusyProgressMaximum = 100;
             BusyProgressText = "正在启动更新器...";
+            BusyCurrentItemText = string.Empty;
+
             var appBaseDirectory = GetAppBaseDirectory();
             var updaterPath = Path.Combine(appBaseDirectory, "VSLoader.Updater.exe");
             if (!File.Exists(updaterPath))
             {
-                _dialogService.ShowError("当前程序目录缺少 VSLoader.Updater.exe，无法启动更新器。");
-                return;
+                pendingErrorMessage = "当前程序目录缺少 VSLoader.Updater.exe，无法启动更新器。";
             }
-
-            var runnerResult = _updaterRunnerService.Prepare(appBaseDirectory);
-            if (!runnerResult.Success)
+            else
             {
-                _dialogService.ShowError(runnerResult.ErrorMessage);
-                return;
+                var runnerResult = _updaterRunnerService.Prepare(appBaseDirectory);
+                if (!runnerResult.Success)
+                {
+                    pendingErrorMessage = runnerResult.ErrorMessage;
+                }
+                else
+                {
+                    var arguments = BuildUpdaterArguments(
+                        manifestPath,
+                        currentVersion);
+
+                    if (!StartUpdater(runnerResult.RunnerUpdaterPath, arguments))
+                    {
+                        pendingErrorMessage = "更新器启动失败，主程序不会退出。";
+                    }
+                    else
+                    {
+                        RequestApplicationExit();
+                    }
+                }
             }
-
-            var arguments = BuildUpdaterArguments(
-                manifestPath,
-                currentVersion);
-
-            if (!StartUpdater(runnerResult.RunnerUpdaterPath, arguments))
-            {
-                _dialogService.ShowError("更新器启动失败，主程序不会退出。");
-                return;
-            }
-
-            RequestApplicationExit();
         }
         catch (Exception ex)
         {
-            _dialogService.ShowError($"软件更新失败：{ex.Message}");
+            pendingErrorMessage = $"软件更新失败：{ex.Message}";
         }
         finally
         {
-            IsBusy = false;
-            BusyMessage = string.Empty;
-            BusyProgressValue = 0;
-            BusyProgressMaximum = 0;
-            BusyProgressText = string.Empty;
-            BusyCurrentItemText = string.Empty;
+            ClearBusyState();
+        }
+
+        if (!string.IsNullOrWhiteSpace(pendingErrorMessage))
+        {
+            _dialogService.ShowError(pendingErrorMessage);
         }
     }
 
@@ -592,52 +656,131 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        GlobalConfigImportResult? completedResult = null;
+        string? failureMessage = null;
+        var useBackgroundIo = SynchronizationContext.Current
+            is System.Windows.Threading.DispatcherSynchronizationContext;
         try
         {
             IsBusy = true;
+            BusyOverlayHost = BusyOverlayHost.Main;
             BusyMessage = "正在导入全局配置...";
             BusyProgressMaximum = 100;
-            BusyProgressValue = 20;
-            BusyProgressText = "正在读取并校验配置包...";
-            BusyCurrentItemText = string.Empty;
+            BusyProgressValue = 5;
+            BusyProgressText = "正在准备导入...";
+            BusyCurrentItemText = Path.GetFileName(packagePath);
 
-            var result = _globalConfigPackageService.Import(
-                packagePath,
-                _configService.ConfigPath,
-                _factoryMapLayoutPath,
-                _appSettings,
-                _ => _vsCodePathResolver.Resolve());
+            var importedAppSettings = CloneAppSettingsForGlobalConfigImport(_appSettings);
+            var progressReporter = new Progress<GlobalConfigOperationProgress>(progress =>
+            {
+                BusyProgressValue = progress.Value;
+                BusyProgressText = progress.Message;
+                BusyCurrentItemText = progress.CurrentItem;
+            });
+            GlobalConfigImportResult result;
+            if (useBackgroundIo)
+            {
+                await Task.Yield();
+                result = await Task.Run(() =>
+                    _globalConfigPackageService.Import(
+                        packagePath,
+                        _configService.ConfigPath,
+                        _factoryMapLayoutPath,
+                        importedAppSettings,
+                        _ => _vsCodePathResolver.Resolve(),
+                        progressReporter));
+            }
+            else
+            {
+                result = _globalConfigPackageService.Import(
+                    packagePath,
+                    _configService.ConfigPath,
+                    _factoryMapLayoutPath,
+                    importedAppSettings,
+                    _ => _vsCodePathResolver.Resolve(),
+                    progressReporter);
+            }
 
             if (!result.Success)
             {
-                _dialogService.ShowError(result.ErrorMessage ?? "全局配置导入失败。");
-                return;
+                failureMessage = result.ErrorMessage ?? "全局配置导入失败。";
             }
-
-            BusyProgressValue = 70;
-            var saveSettingsResult = _appSettingsService.Save(_appSettings);
-            if (!saveSettingsResult.Success)
+            else
             {
-                _dialogService.ShowError($"保存程序配置失败：{saveSettingsResult.ErrorMessage}");
-                return;
-            }
+                BusyProgressValue = 92;
+                BusyProgressText = "正在保存程序设置...";
+                BusyCurrentItemText = "app-settings.json";
+                ApplyImportedAppSettings(importedAppSettings, _appSettings);
+                var saveSettingsResult = useBackgroundIo
+                    ? await Task.Run(() => _appSettingsService.Save(_appSettings))
+                    : _appSettingsService.Save(_appSettings);
+                if (!saveSettingsResult.Success)
+                {
+                    failureMessage = $"保存程序配置失败：{saveSettingsResult.ErrorMessage}";
+                }
+                else
+                {
+                    BusyProgressValue = 96;
+                    BusyProgressText = "正在刷新快捷项和窗口布局...";
+                    BusyCurrentItemText = "正在应用导入结果";
+                    if (useBackgroundIo)
+                    {
+                        await Task.Yield();
+                    }
 
-            LoadConfig();
-            TryRegisterImportedHotkey(result);
-            MarkImportedGlobalConfigUsed(packagePath);
-            BusyProgressValue = 100;
-            ApplyGlobalConfigImportStatus(result);
-            _dialogService.ShowInfo(BuildGlobalConfigImportMessage(result));
-            await Task.CompletedTask;
+                    LoadConfig();
+                    TryRegisterImportedHotkey(result);
+                    MarkImportedGlobalConfigUsed(packagePath);
+                    if (result.RequiresWindowLayoutReload)
+                    {
+                        WorkspaceLayoutImported?.Invoke(this, EventArgs.Empty);
+                    }
+
+                    BusyProgressValue = 100;
+                    BusyProgressText = "全局配置导入完成。";
+                    BusyCurrentItemText = string.Empty;
+                    completedResult = result;
+                    await Task.Delay(120);
+                }
+            }
         }
         catch (Exception ex)
         {
-            _dialogService.ShowError($"全局配置导入失败：{ex.Message}");
+            failureMessage = $"全局配置导入失败：{ex.Message}";
         }
         finally
         {
             ClearBusyState();
         }
+
+        if (!string.IsNullOrWhiteSpace(failureMessage))
+        {
+            _dialogService.ShowError(failureMessage);
+            return;
+        }
+
+        if (completedResult is not null)
+        {
+            ApplyGlobalConfigImportStatus(completedResult);
+            _dialogService.ShowInfo(BuildGlobalConfigImportMessage(completedResult));
+        }
+    }
+
+    private static AppSettings CloneAppSettingsForGlobalConfigImport(AppSettings source)
+    {
+        return new AppSettings
+        {
+            VSCodePath = source.VSCodePath,
+            SoftwareUpdateManifestPath = source.SoftwareUpdateManifestPath,
+            SettingsPageOrder = source.SettingsPageOrder?.ToList() ?? []
+        };
+    }
+
+    private static void ApplyImportedAppSettings(AppSettings source, AppSettings target)
+    {
+        target.VSCodePath = source.VSCodePath;
+        target.SoftwareUpdateManifestPath = source.SoftwareUpdateManifestPath;
+        target.SettingsPageOrder = source.SettingsPageOrder?.ToList() ?? [];
     }
 
     private string BuildUpdaterArguments(string manifestPath, Version currentVersion)
@@ -955,6 +1098,8 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        string? pendingInfoMessage = null;
+        string? pendingErrorMessage = null;
         try
         {
             IsBusy = true;
@@ -972,49 +1117,56 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 BusyProgressText = "网络连接失败。";
                 BusyCurrentItemText = string.Empty;
-                _dialogService.ShowError(testResult.ErrorMessage ?? "网络连接失败，请检查 AdminUI BaseUrl、网络环境或 VPN。");
-                return;
+                pendingErrorMessage = testResult.ErrorMessage ?? "网络连接失败，请检查 AdminUI BaseUrl、网络环境或 VPN。";
             }
-
-            var progress = new Progress<AdminUiDownloadProgress>(downloadProgress =>
+            else
             {
-                BusyProgressValue = downloadProgress.CompletedCount;
-                BusyProgressMaximum = downloadProgress.TotalCount;
-                BusyProgressText = $"当前进度：{downloadProgress.CompletedCount} / {downloadProgress.TotalCount}，成功：{downloadProgress.SuccessCount}，失败：{downloadProgress.FailedCount}";
-                BusyCurrentItemText = string.IsNullOrWhiteSpace(downloadProgress.CurrentShortcutName)
-                    ? string.Empty
-                    : $"正在处理：{downloadProgress.CurrentShortcutName}";
-            });
-
-            var result = await Task.Run(async () =>
-            {
-                return await _adminUiService.DownloadAllAsync(shortcutSnapshot, adminUiConfig, progress);
-            });
-            var message = $"自动获取连接完成。\n成功：{result.SuccessCount}\n失败：{result.FailedCount}";
-
-            if (result.Messages.Count > 0)
-            {
-                message += "\n\n" + string.Join("\n", result.Messages.Take(10));
-                if (result.Messages.Count > 10)
+                var progress = new Progress<AdminUiDownloadProgress>(downloadProgress =>
                 {
-                    message += $"\n... 还有 {result.Messages.Count - 10} 条消息。";
-                }
-            }
+                    BusyProgressValue = downloadProgress.CompletedCount;
+                    BusyProgressMaximum = downloadProgress.TotalCount;
+                    BusyProgressText = $"当前进度：{downloadProgress.CompletedCount} / {downloadProgress.TotalCount}，成功：{downloadProgress.SuccessCount}，失败：{downloadProgress.FailedCount}";
+                    BusyCurrentItemText = string.IsNullOrWhiteSpace(downloadProgress.CurrentShortcutName)
+                        ? string.Empty
+                        : $"正在处理：{downloadProgress.CurrentShortcutName}";
+                });
 
-            _dialogService.ShowInfo(message);
+                var result = await Task.Run(async () =>
+                {
+                    return await _adminUiService.DownloadAllAsync(shortcutSnapshot, adminUiConfig, progress);
+                });
+                var message = $"自动获取连接完成。\n成功：{result.SuccessCount}\n失败：{result.FailedCount}";
+
+                if (result.Messages.Count > 0)
+                {
+                    message += "\n\n" + string.Join("\n", result.Messages.Take(10));
+                    if (result.Messages.Count > 10)
+                    {
+                        message += $"\n... 还有 {result.Messages.Count - 10} 条消息。";
+                    }
+                }
+
+                pendingInfoMessage = message;
+            }
         }
         catch (Exception ex)
         {
-            _dialogService.ShowError($"自动获取连接失败：{ex.Message}");
+            pendingErrorMessage = $"自动获取连接失败：{ex.Message}";
         }
         finally
         {
-            IsBusy = false;
-            BusyMessage = string.Empty;
-            BusyProgressValue = 0;
-            BusyProgressMaximum = 0;
-            BusyProgressText = string.Empty;
-            BusyCurrentItemText = string.Empty;
+            ClearBusyState();
+        }
+
+        if (!string.IsNullOrWhiteSpace(pendingErrorMessage))
+        {
+            _dialogService.ShowError(pendingErrorMessage);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(pendingInfoMessage))
+        {
+            _dialogService.ShowInfo(pendingInfoMessage);
         }
     }
 
@@ -1026,12 +1178,26 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var result = await DownloadAdminUiLinkForShortcutAsync(SelectedShortcut, BusyOverlayHost.Main);
+        if (!result.Success)
+        {
+            _dialogService.ShowError(result.Message);
+            return;
+        }
+
+        _dialogService.ShowInfo(result.Message);
+    }
+
+    private async Task<ContextMenuCapabilityExecutionResult> DownloadAdminUiLinkForShortcutAsync(
+        ShortcutItem shortcut,
+        BusyOverlayHost overlayHost)
+    {
         try
         {
-            var shortcut = SelectedShortcut;
             var adminUiConfig = _config.AdminUi.Clone();
 
             IsBusy = true;
+            BusyOverlayHost = overlayHost;
             BusyMessage = $"正在获取 {shortcut.Name} 的 AdminUI 连接，请稍候...";
             BusyProgressValue = 0;
             BusyProgressMaximum = 1;
@@ -1042,8 +1208,8 @@ public sealed partial class MainViewModel : ObservableObject
             if (!testResult.Success)
             {
                 BusyProgressText = "网络连接失败。";
-                _dialogService.ShowError(testResult.ErrorMessage ?? "网络连接失败，请检查 AdminUI BaseUrl、网络环境或 VPN。");
-                return;
+                return ContextMenuCapabilityExecutionResult.Fail(
+                    testResult.ErrorMessage ?? "网络连接失败，请检查 AdminUI BaseUrl、网络环境或 VPN。");
             }
 
             BusyProgressText = "正在下载 AdminUI 连接...";
@@ -1056,26 +1222,20 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (!result.Success)
             {
-                _dialogService.ShowError(result.ErrorMessage ?? "获取 AdminUI 连接失败。");
-                return;
+                return ContextMenuCapabilityExecutionResult.Fail(result.ErrorMessage ?? "获取 AdminUI 连接失败。");
             }
 
             BusyProgressValue = 1;
             BusyProgressText = "获取完成。";
-            _dialogService.ShowInfo($"已获取 AdminUI 连接：{shortcut.Name}");
+            return ContextMenuCapabilityExecutionResult.Ok($"已获取 AdminUI 连接：{shortcut.Name}");
         }
         catch (Exception ex)
         {
-            _dialogService.ShowError($"获取 AdminUI 连接失败：{ex.Message}");
+            return ContextMenuCapabilityExecutionResult.Fail($"获取 AdminUI 连接失败：{ex.Message}");
         }
         finally
         {
-            IsBusy = false;
-            BusyMessage = string.Empty;
-            BusyProgressValue = 0;
-            BusyProgressMaximum = 0;
-            BusyProgressText = string.Empty;
-            BusyCurrentItemText = string.Empty;
+            ClearBusyState();
         }
     }
 
@@ -1087,62 +1247,231 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var result = await OpenAdminUiForShortcutAsync(SelectedShortcut);
+        if (!result.Success && !result.Cancelled)
+        {
+            _dialogService.ShowError(result.Message);
+        }
+    }
+
+    private async Task<ContextMenuCapabilityExecutionResult> OpenAdminUiForShortcutAsync(ShortcutItem shortcut)
+    {
+        CancelAdminUiClipboardFallback();
+        _adminUiAutoLoginCoordinator.CancelWaitingTask("NewAdminUiLaunchRequested");
+
         var adminUiConfig = _config.AdminUi.Clone();
-        var result = await _adminUiService.OpenAdminUiAsync(SelectedShortcut, adminUiConfig);
+        var result = await _adminUiService.OpenAdminUiAsync(shortcut, adminUiConfig);
         if (!result.Success)
         {
-            _dialogService.ShowError(result.ErrorMessage ?? "打开 AdminUI 失败。");
-            return;
+            return ContextMenuCapabilityExecutionResult.Fail(result.ErrorMessage ?? "打开 AdminUI 失败。");
         }
 
         var password = _passwordProtectionService.Unprotect(adminUiConfig.ProtectedPassword);
         if (string.IsNullOrEmpty(password))
         {
             ShowTemporaryStatusMessage("AdminUI 已打开，但未配置 AdminUI 密码。");
-            return;
+            return ContextMenuCapabilityExecutionResult.Ok("AdminUI 已打开，但未配置 AdminUI 密码。");
+        }
+
+        if (adminUiConfig.AutoPastePasswordEnabled)
+        {
+            ShowTemporaryStatusMessage("AdminUI 已打开，正在等待登录窗口...");
+            _adminUiAutoLoginCoordinator.Start(
+                adminUiConfig,
+                password,
+                (sessionId, pasteResult) => HandleAdminUiAutoLoginResult(sessionId, pasteResult, password),
+                (sessionId, ex) => HandleAdminUiAutoLoginError(sessionId, ex, password));
+            return ContextMenuCapabilityExecutionResult.Ok("AdminUI 已打开，正在等待登录窗口...");
         }
 
         var clipboardResult = await _clipboardService.SetTextWithRetryAsync(password);
         if (clipboardResult.Success)
         {
-            LogAdminUiClipboardCheck(password);
-            if (!adminUiConfig.AutoPastePasswordEnabled)
-            {
-                ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
-                return;
-            }
+            ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板。");
+            return ContextMenuCapabilityExecutionResult.Ok("AdminUI 已打开，密码已复制到剪贴板。");
+        }
 
-            ShowTemporaryStatusMessage("AdminUI 已打开，密码已复制到剪贴板，正在等待 AdminUI 前台窗口...");
-            var pasteResult = await _adminUiAutoPasteService.TryPasteAsync(adminUiConfig);
-            if (pasteResult.Success)
-            {
-                ShowTemporaryStatusMessage("AdminUI 已打开，密码已自动粘贴并回车。");
-                return;
-            }
+        return ContextMenuCapabilityExecutionResult.Fail(
+            $"AdminUI 已打开，但写入剪贴板失败：{clipboardResult.ErrorMessage}");
+    }
 
-            ShowTemporaryStatusMessage($"AdminUI 已打开，密码已复制到剪贴板。{pasteResult.Message}请手动粘贴。");
+    internal static bool ShouldUseAdminUiClipboardFallback(AdminUiAutoLoginStatus status)
+    {
+        return status != AdminUiAutoLoginStatus.InputSubmitted;
+    }
+
+    private void HandleAdminUiAutoLoginResult(
+        long sessionId,
+        AdminUiAutoPasteResult result,
+        string password)
+    {
+        if (ShouldUseAdminUiClipboardFallback(result.Status))
+        {
+            BeginAdminUiClipboardFallback(sessionId, password, result.Status, result.Message);
             return;
         }
 
-        _dialogService.ShowError($"AdminUI 已打开，但写入剪贴板失败：{clipboardResult.ErrorMessage}");
+        RunOnUiThread(() =>
+        {
+            if (_adminUiAutoLoginCoordinator.IsCurrentSession(sessionId)
+                && !_adminUiAutomationShutdownRequested)
+            {
+                ShowTemporaryStatusMessage(result.Message);
+            }
+        });
     }
 
-    private void LogAdminUiClipboardCheck(string expectedText)
+    private void HandleAdminUiAutoLoginError(long sessionId, Exception exception, string password)
+    {
+        BeginAdminUiClipboardFallback(
+            sessionId,
+            password,
+            AdminUiAutoLoginStatus.InputFailed,
+            $"自动登录失败：{exception.Message}");
+    }
+
+    private void BeginAdminUiClipboardFallback(
+        long sessionId,
+        string password,
+        AdminUiAutoLoginStatus status,
+        string automationFailureMessage)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            _adminUiAutoPasteLogService.LogClipboardFallbackFailed(sessionId, "无法获取 WPF Dispatcher。");
+            return;
+        }
+
+        if (dispatcher.CheckAccess())
+        {
+            _ = CopyAdminUiPasswordFallbackAsync(sessionId, password, status, automationFailureMessage);
+            return;
+        }
+
+        _ = DispatchAdminUiClipboardFallbackAsync(
+            dispatcher,
+            sessionId,
+            password,
+            status,
+            automationFailureMessage);
+    }
+
+    private async Task DispatchAdminUiClipboardFallbackAsync(
+        System.Windows.Threading.Dispatcher dispatcher,
+        long sessionId,
+        string password,
+        AdminUiAutoLoginStatus status,
+        string automationFailureMessage)
     {
         try
         {
-            var clipboardText = System.Windows.Clipboard.ContainsText()
-                ? System.Windows.Clipboard.GetText()
-                : string.Empty;
-            _adminUiAutoPasteLogService.LogClipboardCheck(
-                expectedText.Length,
-                clipboardText.Length,
-                string.Equals(clipboardText, expectedText, StringComparison.Ordinal));
+            await dispatcher.InvokeAsync(() =>
+                CopyAdminUiPasswordFallbackAsync(sessionId, password, status, automationFailureMessage))
+                .Task
+                .Unwrap();
         }
         catch (Exception ex)
         {
-            _adminUiAutoPasteLogService.LogError(ex);
+            _adminUiAutoPasteLogService.LogClipboardFallbackFailed(sessionId, ex.Message);
         }
+    }
+
+    private async Task CopyAdminUiPasswordFallbackAsync(
+        long sessionId,
+        string password,
+        AdminUiAutoLoginStatus status,
+        string automationFailureMessage)
+    {
+        if (_adminUiAutomationShutdownRequested
+            || !_adminUiAutoLoginCoordinator.IsCurrentSession(sessionId)
+            || _lastAdminUiClipboardFallbackSessionId >= sessionId)
+        {
+            return;
+        }
+
+        _lastAdminUiClipboardFallbackSessionId = sessionId;
+        _adminUiClipboardFallbackCancellationTokenSource?.Cancel();
+        _adminUiClipboardFallbackCancellationTokenSource?.Dispose();
+        var cancellationTokenSource = new CancellationTokenSource();
+        _adminUiClipboardFallbackCancellationTokenSource = cancellationTokenSource;
+        _adminUiAutoPasteLogService.LogClipboardFallbackStart(sessionId, status, password.Length);
+
+        try
+        {
+            var clipboardResult = await _clipboardService.SetTextWithRetryAsync(
+                password,
+                cancellationToken: cancellationTokenSource.Token);
+            if (!IsCurrentAdminUiSession(sessionId))
+            {
+                return;
+            }
+
+            if (clipboardResult.Success)
+            {
+                _adminUiAutoPasteLogService.LogClipboardFallbackCompleted(sessionId);
+                ShowTemporaryStatusMessage($"{automationFailureMessage}密码已复制到剪贴板，请手动粘贴。");
+                return;
+            }
+
+            _adminUiAutoPasteLogService.LogClipboardFallbackFailed(sessionId, clipboardResult.ErrorMessage ?? "未知错误");
+            _dialogService.ShowError(
+                $"{automationFailureMessage}\n密码写入剪贴板也失败：{clipboardResult.ErrorMessage}\n请手动输入密码。");
+        }
+        catch (OperationCanceledException)
+        {
+            _adminUiAutoPasteLogService.LogTaskCancel(sessionId, "ClipboardFallbackCanceled");
+        }
+        catch (Exception ex)
+        {
+            _adminUiAutoPasteLogService.LogClipboardFallbackFailed(sessionId, ex.Message);
+            if (IsCurrentAdminUiSession(sessionId))
+            {
+                _dialogService.ShowError(
+                    $"{automationFailureMessage}\n密码写入剪贴板也失败：{ex.Message}\n请手动输入密码。");
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_adminUiClipboardFallbackCancellationTokenSource, cancellationTokenSource))
+            {
+                _adminUiClipboardFallbackCancellationTokenSource = null;
+            }
+
+            cancellationTokenSource.Dispose();
+        }
+    }
+
+    private bool IsCurrentAdminUiSession(long sessionId)
+    {
+        return !_adminUiAutomationShutdownRequested
+            && _adminUiAutoLoginCoordinator.IsCurrentSession(sessionId);
+    }
+
+    private void CancelAdminUiClipboardFallback()
+    {
+        _adminUiClipboardFallbackCancellationTokenSource?.Cancel();
+        _adminUiClipboardFallbackCancellationTokenSource?.Dispose();
+        _adminUiClipboardFallbackCancellationTokenSource = null;
+    }
+
+    public void ShutdownAdminUiAutomation()
+    {
+        _adminUiAutomationShutdownRequested = true;
+        CancelAdminUiClipboardFallback();
+        _adminUiAutoLoginCoordinator.Shutdown();
+    }
+
+    private static void RunOnUiThread(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(action);
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
@@ -1153,11 +1482,19 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var result = await _webUiService.OpenWebUiAsync(SelectedShortcut, _config.WebUi);
+        var result = await OpenWebUiForShortcutAsync(SelectedShortcut);
         if (!result.Success)
         {
-            _dialogService.ShowError(result.ErrorMessage ?? "打开 WebUI 失败。");
+            _dialogService.ShowError(result.Message);
         }
+    }
+
+    private async Task<ContextMenuCapabilityExecutionResult> OpenWebUiForShortcutAsync(ShortcutItem shortcut)
+    {
+        var result = await _webUiService.OpenWebUiAsync(shortcut, _config.WebUi);
+        return result.Success
+            ? ContextMenuCapabilityExecutionResult.Ok("WebUI 已打开。")
+            : ContextMenuCapabilityExecutionResult.Fail(result.ErrorMessage ?? "打开 WebUI 失败。");
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedShortcut))]
@@ -1200,13 +1537,27 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        DeleteShortcut(SelectedShortcut);
+    }
+
+    internal void DeleteShortcutFromMap(ShortcutItem shortcut)
+    {
+        DeleteShortcut(shortcut);
+    }
+
+    private void DeleteShortcut(ShortcutItem shortcut)
+    {
         if (!_dialogService.Confirm("确定要删除该快捷项吗？"))
         {
             return;
         }
 
-        Shortcuts.Remove(SelectedShortcut);
-        SelectedShortcut = null;
+        Shortcuts.Remove(shortcut);
+        if (ReferenceEquals(SelectedShortcut, shortcut))
+        {
+            SelectedShortcut = null;
+        }
+
         SaveCurrentConfig();
         RefreshShortcutsView();
     }
@@ -1219,23 +1570,104 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        var result = await _launcherService.LaunchAsync(_appSettings.VSCodePath, SelectedShortcut.TargetPath);
+        var result = await OpenVsCodeForShortcutAsync(SelectedShortcut);
         if (!result.Success)
         {
-            _dialogService.ShowError(result.ErrorMessage ?? "打开 VSCode 失败。");
+            _dialogService.ShowError(result.Message);
         }
+    }
+
+    private async Task<ContextMenuCapabilityExecutionResult> OpenVsCodeForShortcutAsync(ShortcutItem shortcut)
+    {
+        var result = await _launcherService.LaunchAsync(_appSettings.VSCodePath, shortcut.TargetPath);
+        return result.Success
+            ? ContextMenuCapabilityExecutionResult.Ok("VSCode 已打开。")
+            : ContextMenuCapabilityExecutionResult.Fail(result.ErrorMessage ?? "打开 VSCode 失败。");
+    }
+
+    public IReadOnlyList<ContextMenuCapabilityDefinition> GetContextMenuCapabilities(string surface)
+    {
+        return _contextMenuCapabilityConfigService.GetVisible(_config.ContextMenuCapabilities, surface);
+    }
+
+    public async Task ExecuteContextMenuCapabilityAsync(
+        ContextMenuCapabilityDefinition definition,
+        ShortcutItem shortcut,
+        string surface)
+    {
+        var context = new ContextMenuCapabilityExecutionContext
+        {
+            Shortcut = shortcut,
+            WorkspaceId = _workspaceId,
+            WorkspaceDirectory = _workspaceDirectory,
+            AppBaseDirectory = GetAppBaseDirectory(),
+            Surface = surface
+        };
+        var result = await _contextMenuCapabilityExecutionService.ExecuteAsync(
+            definition,
+            context,
+            CancellationToken.None);
+        if (!result.Success && !result.Cancelled)
+        {
+            _dialogService.ShowError(
+                ContextMenuCapabilityExecutionService.BuildFailureDetails(definition, context, result));
+            return;
+        }
+
+        if (result.Success
+            && string.Equals(definition.BuiltInActionId, ContextMenuBuiltInActionIds.DownloadAdminUiLink, StringComparison.Ordinal))
+        {
+            _dialogService.ShowInfo(result.Message);
+        }
+    }
+
+    private Task<ContextMenuCapabilityExecutionResult> ExecuteBuiltInContextMenuCapabilityAsync(
+        string actionId,
+        ContextMenuCapabilityExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(ContextMenuCapabilityExecutionResult.Cancel());
+        }
+
+        return actionId switch
+        {
+            ContextMenuBuiltInActionIds.OpenVsCode => OpenVsCodeForShortcutAsync(context.Shortcut),
+            ContextMenuBuiltInActionIds.OpenWebUi => OpenWebUiForShortcutAsync(context.Shortcut),
+            ContextMenuBuiltInActionIds.OpenAdminUi => OpenAdminUiForShortcutAsync(context.Shortcut),
+            ContextMenuBuiltInActionIds.DownloadAdminUiLink => DownloadAdminUiLinkForShortcutAsync(
+                context.Shortcut,
+                string.Equals(context.Surface, ContextMenuCapabilitySurfaces.FactoryMap, StringComparison.Ordinal)
+                    ? BusyOverlayHost.Map
+                    : BusyOverlayHost.Main),
+            _ => Task.FromResult(ContextMenuCapabilityExecutionResult.Fail($"内建能力不受支持：{actionId}。"))
+        };
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
     private void OpenSettings()
     {
-        var viewModel = new SettingsViewModel(_appSettings.VSCodePath, _appSettings.SoftwareUpdateManifestPath, _config.AdminUi, _config.WebUi, _config.UpdateCheck, _config.Hotkey, _config.MapHotkey, _dialogService, _passwordProtectionService, TryRegisterHotkeys);
+        var viewModel = new SettingsViewModel(
+            _appSettings.VSCodePath,
+            _appSettings.SoftwareUpdateManifestPath,
+            _config.AdminUi,
+            _config.WebUi,
+            _config.UpdateCheck,
+            _config.Hotkey,
+            _config.MapHotkey,
+            _dialogService,
+            _passwordProtectionService,
+            TryRegisterHotkeys,
+            _config.ContextMenuCapabilities,
+            _appSettings.SettingsPageOrder);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
         {
             _appSettings.VSCodePath = viewModel.VSCodePath.Trim();
             _appSettings.SoftwareUpdateManifestPath = viewModel.SoftwareUpdateManifestPath.Trim();
+            _appSettings.SettingsPageOrder = viewModel.SettingsPageOrder.ToList();
             var appSettingsSaveResult = _appSettingsService.Save(_appSettings);
             if (!appSettingsSaveResult.Success)
             {
@@ -1248,7 +1680,24 @@ public sealed partial class MainViewModel : ObservableObject
             _config.UpdateCheck = viewModel.UpdateCheck.Clone();
             _config.Hotkey = viewModel.Hotkey.Clone();
             _config.MapHotkey = viewModel.MapHotkey.Clone();
-            SaveCurrentConfig();
+            var previousCapabilities = _config.ContextMenuCapabilities;
+            _config.ContextMenuCapabilities = viewModel.ContextMenuCapabilities.Clone();
+            if (!SaveCurrentConfig())
+            {
+                _config.ContextMenuCapabilities = previousCapabilities;
+                return;
+            }
+
+            foreach (var capability in viewModel.PowerShellCapabilitiesApprovedForTrust)
+            {
+                var trustResult = _contextMenuCapabilityTrustService.Trust(capability);
+                if (!trustResult.Success)
+                {
+                    _dialogService.ShowError(trustResult.ErrorMessage ?? "保存命令信任状态失败。");
+                    break;
+                }
+            }
+
             _configLoadFailed = false;
             UpdateStatusMessage();
         }
@@ -1271,7 +1720,7 @@ public sealed partial class MainViewModel : ObservableObject
             listCollectionView.CustomSort = new ShortcutSortService(field, direction);
         }
 
-        RefreshShortcutsView();
+        RefreshShortcutsView(notifyShortcutsChanged: false);
     }
 
     private void LoadConfig()
@@ -1344,11 +1793,14 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private void RefreshShortcutsView()
+    private void RefreshShortcutsView(bool notifyShortcutsChanged = true)
     {
         ShortcutsView.Refresh();
         UpdateShortcutCountText();
-        ShortcutsChanged?.Invoke(this, EventArgs.Empty);
+        if (notifyShortcutsChanged)
+        {
+            ShortcutsChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private void UpdateShortcutCountText()
@@ -1358,7 +1810,7 @@ public sealed partial class MainViewModel : ObservableObject
         ShortcutCountText = $"{visibleCount} / {totalCount}";
     }
 
-    private void SaveCurrentConfig()
+    private bool SaveCurrentConfig()
     {
         _config.Shortcuts = Shortcuts.ToList();
         if (_hasInvalidConfigFile)
@@ -1367,7 +1819,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (!backupResult.Success)
             {
                 _dialogService.ShowError($"备份损坏配置文件失败：{backupResult.ErrorMessage}");
-                return;
+                return false;
             }
 
             _hasInvalidConfigFile = false;
@@ -1377,11 +1829,12 @@ public sealed partial class MainViewModel : ObservableObject
         if (!result.Success)
         {
             _dialogService.ShowError($"保存配置失败：{result.ErrorMessage}");
-            return;
+            return false;
         }
 
         _configLoadFailed = false;
         UpdateStatusMessage();
+        return true;
     }
 
     public void MarkMapFileUsed(string mapFilePath)

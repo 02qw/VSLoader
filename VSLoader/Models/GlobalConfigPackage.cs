@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace VSLoader.Models;
 
 public sealed class GlobalConfigPackage
@@ -8,9 +10,18 @@ public sealed class GlobalConfigPackage
 
     public string ExportedAt { get; set; } = string.Empty;
 
-    public GlobalProgramSettings ProgramSettings { get; set; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GlobalConfigWorkspaceSection? Workspace { get; set; }
 
-    public AppConfig WorkspaceConfig { get; set; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GlobalProgramSettings? MachineSettings { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public GlobalProgramSettings? ProgramSettings { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AppConfig? WorkspaceConfig { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FactoryMapLayoutConfig? FactoryMapLayout { get; set; }
 }

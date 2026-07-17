@@ -39,6 +39,15 @@ public sealed class AppSettingsServiceTests : IDisposable
             LastWorkspaceId = "line-a",
             OpenLastWorkspaceOnStartup = true,
             MigrationCompleted = true,
+            SettingsPageOrder =
+            [
+                SettingsPageIds.ContextMenuCapabilities,
+                SettingsPageIds.Hotkeys,
+                SettingsPageIds.General,
+                SettingsPageIds.AdminUi,
+                SettingsPageIds.WebUi,
+                SettingsPageIds.Updates
+            ],
             Workspaces =
             [
                 new WorkspaceInfo
@@ -61,6 +70,7 @@ public sealed class AppSettingsServiceTests : IDisposable
         Assert.Equal(@"\\server\VSLoaderUpdate\manifest.json", loaded.SoftwareUpdateManifestPath);
         Assert.Equal("line-a", loaded.LastWorkspaceId);
         Assert.True(loaded.MigrationCompleted);
+        Assert.Equal(settings.SettingsPageOrder, loaded.SettingsPageOrder);
         Assert.Single(loaded.Workspaces);
         Assert.Equal("产线A", loaded.Workspaces[0].Name);
     }
@@ -88,6 +98,29 @@ public sealed class AppSettingsServiceTests : IDisposable
 
         Assert.Null(warning);
         Assert.Equal(string.Empty, settings.SoftwareUpdateManifestPath);
+        Assert.Equal(SettingsPageOrderService.DefaultPageOrder, settings.SettingsPageOrder);
+    }
+
+    [Fact]
+    public void LoadOrCreate_normalizes_invalid_settings_page_order()
+    {
+        var service = new AppSettingsService(_rootPath);
+        File.WriteAllText(
+            service.SettingsPath,
+            """
+            {
+              "SettingsPageOrder": ["hotkeys", "unknown", "HOTKEYS", "pageOrder", "adminUi"],
+              "Workspaces": []
+            }
+            """);
+
+        var settings = service.LoadOrCreate(out var warning);
+
+        Assert.Null(warning);
+        Assert.Equal(SettingsPageIds.Hotkeys, settings.SettingsPageOrder[0]);
+        Assert.Equal(SettingsPageIds.AdminUi, settings.SettingsPageOrder[1]);
+        Assert.Equal(SettingsPageOrderService.DefaultPageOrder.Count, settings.SettingsPageOrder.Count);
+        Assert.DoesNotContain(SettingsPageIds.PageOrder, settings.SettingsPageOrder);
     }
 
     public void Dispose()

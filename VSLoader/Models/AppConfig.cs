@@ -17,4 +17,6 @@ public sealed class AppConfig
     public WebUiConfig WebUi { get; set; } = new();
 
     public UpdateCheckConfig UpdateCheck { get; set; } = new();
+
+    public ContextMenuCapabilityCollectionConfig ContextMenuCapabilities { get; set; } = new();
 }

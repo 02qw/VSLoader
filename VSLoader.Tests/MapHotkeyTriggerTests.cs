@@ -32,7 +32,20 @@ public sealed class MapHotkeyTriggerTests
             "MainWindow.xaml.cs"));
 
         Assert.Contains("ToggleFactoryMapFromGlobalHotkey", code);
-        Assert.DoesNotContain("MainWindow_PreviewKeyDown", code);
         Assert.DoesNotContain("TryToggleFactoryMapFromHotkey", code);
+
+        var previewKeyDownStart = code.IndexOf(
+            "private void MainWindow_PreviewKeyDown",
+            StringComparison.Ordinal);
+        var nextMethodStart = code.IndexOf(
+            "private void FactoryMapWindow_StateChanged",
+            previewKeyDownStart,
+            StringComparison.Ordinal);
+        Assert.True(previewKeyDownStart >= 0);
+        Assert.True(nextMethodStart > previewKeyDownStart);
+        Assert.DoesNotContain(
+            "ToggleFactoryMapFromGlobalHotkey",
+            code[previewKeyDownStart..nextMethodStart],
+            StringComparison.Ordinal);
     }
 }

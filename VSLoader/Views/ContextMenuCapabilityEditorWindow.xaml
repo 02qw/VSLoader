@@ -1,0 +1,319 @@
+<Window x:Class="VSLoader.Views.ContextMenuCapabilityEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:chromeControls="clr-namespace:VSLoader.Views.Controls"
+        Title="{Binding WindowTitle}"
+        Icon="pack://application:,,,/Assets/tomato.ico"
+        Width="760"
+        Height="700"
+        MinWidth="680"
+        MinHeight="560"
+        WindowStyle="None"
+        WindowStartupLocation="CenterOwner">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="44"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Border Background="{StaticResource ModernAppBackgroundBrush}"
+            BorderBrush="{StaticResource ModernWindowOuterBorderBrush}"
+            BorderThickness="1"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <chromeControls:ModernTitleBar Grid.Row="0" />
+
+            <ScrollViewer Grid.Row="1"
+                          Margin="18"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <GroupBox Header="基础信息" Style="{StaticResource ModernGroupBoxStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="能力类型" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding TypeDisplayName}" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="菜单名称" />
+                            <TextBox Grid.Row="1" Grid.Column="1"
+                                     Style="{StaticResource ModernTextBoxStyle}"
+                                     Height="34"
+                                     Margin="0,0,0,10"
+                                     IsReadOnly="{Binding IsBuiltIn}"
+                                     Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="展示位置" />
+                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" Orientation="Horizontal">
+                                <CheckBox Style="{StaticResource ModernCheckBoxStyle}" Margin="0,0,18,0" Content="快捷项列表" IsChecked="{Binding ShowInShortcutList}" />
+                                <CheckBox Style="{StaticResource ModernCheckBoxStyle}" Content="工厂地图" IsChecked="{Binding ShowInFactoryMap}" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="执行约束" />
+                            <StackPanel Grid.Row="3" Grid.Column="1">
+                                <CheckBox Style="{StaticResource ModernCheckBoxStyle}" Margin="0,0,0,8" Content="目标路径必须存在" IsChecked="{Binding RequiresExistingTargetPath}" />
+                                <CheckBox Style="{StaticResource ModernCheckBoxStyle}" Content="每次执行前确认" IsChecked="{Binding ConfirmBeforeExecute}" />
+                            </StackPanel>
+                        </Grid>
+                    </GroupBox>
+
+                    <GroupBox Header="PowerShell 命令"
+                              Style="{StaticResource ModernGroupBoxStyle}"
+                              Visibility="{Binding IsPowerShell, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Margin="0,0,0,6" Text="脚本" />
+                            <TextBox Style="{StaticResource ModernMultilineTextBoxStyle}"
+                                     Height="190"
+                                     AcceptsReturn="True"
+                                     AcceptsTab="True"
+                                     FontFamily="Consolas"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Text="{Binding Script, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="NoWrap" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="工作目录" />
+                                <ComboBox Grid.Row="0" Grid.Column="1"
+                                          Height="34"
+                                          Margin="0,0,0,8"
+                                          ItemsSource="{Binding WorkingDirectoryModes}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="Value"
+                                          SelectedValue="{Binding WorkingDirectoryMode}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="执行模式" />
+                                <ComboBox Grid.Row="1" Grid.Column="1"
+                                          Height="34"
+                                          Margin="0,0,0,8"
+                                          ItemsSource="{Binding ExecutionModes}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="Value"
+                                          SelectedValue="{Binding ExecutionMode}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="后台超时秒数" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Height="34" Text="{Binding TimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
+                            <Separator Margin="0,16,0,14" Background="{StaticResource ModernDividerBrush}" />
+
+                            <TextBlock FontWeight="SemiBold"
+                                       Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                       Text="可用变量（VSLoader 自动提供）" />
+                            <TextBlock Margin="0,5,0,10"
+                                       Foreground="{StaticResource ModernWeakTextBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Text="PowerShell 中不要写 {TargetPath}，请使用下面的 $env:VSL_... 环境变量。路径中的中文、空格和特殊字符会由 VSLoader 原样传入。" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="238" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_TARGET_PATH" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前快捷项的目标路径，例如设备文件夹或配置文件路径。" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_TARGET_PARENT" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="目标路径的父目录；目标已经是磁盘根目录时使用根目录本身。" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_SHORTCUT_NAME" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="快捷项在 VSLoader 中显示的名称。" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_DESCRIPTION" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="快捷项的备注内容，没有备注时为空字符串。" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_SOURCE_MODULE_NAME" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="批量识别时记录的原始模块名，没有该数据时为空字符串。" />
+                                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_WORKSPACE_ID" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前工作区的内部标识。" />
+                                <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_WORKSPACE_PATH" />
+                                <TextBlock Grid.Row="6" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前工作区配置文件所在的目录。" />
+                                <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_APP_BASE_PATH" />
+                                <TextBlock Grid.Row="7" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="VSLoader.exe 当前所在的程序目录。" />
+                                <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_SOURCE_SURFACE" />
+                                <TextBlock Grid.Row="8" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="本次点击来源：shortcutList 表示主界面，factoryMap 表示工厂地图。" />
+                                <TextBlock Grid.Row="9" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_TARGET_NAME" />
+                                <TextBlock Grid.Row="9" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前目标路径最后一个目录或文件名称。" />
+                                <TextBlock Grid.Row="10" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_INSTANCE_ID" />
+                                <TextBlock Grid.Row="10" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="目标末级名称最后一个下划线之前的纯数字实例编号。" />
+                                <TextBlock Grid.Row="11" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_DEVICE_CODE" />
+                                <TextBlock Grid.Row="11" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="完整设备 ID，例如 TSSP001。" />
+                                <TextBlock Grid.Row="12" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_DEVICE_TYPE" />
+                                <TextBlock Grid.Row="12" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="设备 ID 的英文字母部分，例如 TSSP。" />
+                                <TextBlock Grid.Row="13" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="$env:VSL_DEVICE_NUMBER" />
+                                <TextBlock Grid.Row="13" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="设备 ID 的数字部分，例如 001；保留前导零。" />
+                            </Grid>
+
+                            <TextBlock Margin="0,14,0,6"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                       Text="可直接复制的脚本案例" />
+                            <TextBox Height="410"
+                                     Padding="10"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                     Background="#F8FAFC"
+                                     BorderBrush="{StaticResource ModernDividerBrush}"
+                                     BorderThickness="1"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     VerticalScrollBarVisibility="Auto"
+                                     TextWrapping="NoWrap"
+                                     Text="# 案例1：在资源管理器中打开当前目标&#x0a;Start-Process explorer.exe -ArgumentList @($env:VSL_TARGET_PATH)&#x0a;&#x0a;# 案例2：调用已有脚本，并传入当前快捷项的路径和名称&#x0a;# &amp; 是 PowerShell 的调用运算符；ProcessFolder.ps1 需要提前创建。&#x0a;&amp; &quot;C:\Scripts\ProcessFolder.ps1&quot; `&#x0a;    -TargetPath $env:VSL_TARGET_PATH `&#x0a;    -Name $env:VSL_SHORTCUT_NAME&#x0a;&#x0a;# ProcessFolder.ps1 可通过下面的参数接收 VSLoader 传入的数据：&#x0a;# param(&#x0a;#     [string]$TargetPath,&#x0a;#     [string]$Name&#x0a;# )&#x0a;&#x0a;# 案例3：进入目标目录后列出内容，兼容目标是文件或文件夹&#x0a;$path = $env:VSL_TARGET_PATH&#x0a;if (Test-Path -LiteralPath $path -PathType Container) {&#x0a;    Set-Location -LiteralPath $path&#x0a;} else {&#x0a;    Set-Location -LiteralPath $env:VSL_TARGET_PARENT&#x0a;}&#x0a;Get-ChildItem&#x0a;&#x0a;# 案例4：把实例编号和设备 ID 传给已有脚本&#x0a;&amp; &quot;C:\Scripts\ProcessDevice.ps1&quot; `&#x0a;    -InstanceId $env:VSL_INSTANCE_ID `&#x0a;    -DeviceCode $env:VSL_DEVICE_CODE" />
+
+                            <TextBlock Margin="0,12,0,0"
+                                       Foreground="{StaticResource ModernWeakTextBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Text="工作目录决定命令从哪个文件夹开始执行，会影响 Get-ChildItem、.\run.ps1、git status 等相对路径命令。&#x0a;目标目录（推荐）：目标是文件夹时使用目标本身；目标是文件时使用其父目录。&#x0a;目标父目录：始终使用目标路径的父目录。&#x0a;当前工作区目录：使用当前工作区配置文件所在的目录。&#x0a;VSLoader程序目录：使用 VSLoader.exe 当前所在的目录。&#x0a;执行模式：显示 PowerShell 窗口便于观察和交互；后台执行不会显示窗口，并由 VSLoader 收集退出码和错误信息。&#x0a;派生变量无法从目标路径提取时，对应 VSL_ 环境变量为空字符串，脚本可自行判断或回退。" />
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Web 地址"
+                              Style="{StaticResource ModernGroupBoxStyle}"
+                              Visibility="{Binding IsWeb, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Margin="0,0,0,6" Text="URL 模板" />
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}"
+                                     Height="34"
+                                     Text="{Binding UrlTemplate, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Margin="0,10,0,4" FontWeight="SemiBold" Text="预览" />
+                            <TextBlock Foreground="{StaticResource ModernSecondaryTextBrush}" TextWrapping="Wrap" Text="{Binding UrlPreview}" />
+
+                            <Separator Margin="0,16,0,14" Background="{StaticResource ModernDividerBrush}" />
+
+                            <TextBlock FontWeight="SemiBold"
+                                       Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                       Text="可用变量（VSLoader 自动提供）" />
+                            <TextBlock Margin="0,5,0,10"
+                                       Foreground="{StaticResource ModernWeakTextBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Text="Web 模板使用 {ShortcutName} 这样的占位变量，不要使用 PowerShell 的 $env:VSL_... 环境变量。变量值会自动进行 URL 编码，中文、空格和特殊字符无需手动处理。" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{TargetPath}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前快捷项目标路径，例如设备目录或配置文件路径。" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{TargetParent}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="目标路径的父目录；目标是磁盘根目录时使用根目录本身。" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{ShortcutName}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="快捷项在 VSLoader 中显示的名称。" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{Description}" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="快捷项备注；没有备注时替换为空字符串。" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{SourceModuleName}" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="批量识别记录的原始模块名；没有该数据时为空字符串。" />
+                                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{WorkspaceId}" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前工作区的内部标识。" />
+                                <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{WorkspacePath}" />
+                                <TextBlock Grid.Row="6" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前工作区配置文件所在的目录。" />
+                                <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{TargetName}" />
+                                <TextBlock Grid.Row="7" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="当前目标路径最后一个目录或文件名称。" />
+                                <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{InstanceId}" />
+                                <TextBlock Grid.Row="8" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="目标末级名称最后一个下划线之前的纯数字实例编号。" />
+                                <TextBlock Grid.Row="9" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{DeviceCode}" />
+                                <TextBlock Grid.Row="9" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="完整设备 ID，例如 TSSP001。" />
+                                <TextBlock Grid.Row="10" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{DeviceType}" />
+                                <TextBlock Grid.Row="10" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="设备 ID 的英文字母部分，例如 TSSP。" />
+                                <TextBlock Grid.Row="11" Grid.Column="0" Margin="0,3" FontFamily="Consolas" Foreground="{StaticResource ModernSecondaryTextBrush}" Text="{}{DeviceNumber}" />
+                                <TextBlock Grid.Row="11" Grid.Column="1" Margin="0,3" Foreground="{StaticResource ModernWeakTextBrush}" Text="设备序号的数字部分，例如 001；保留前导零。" />
+                            </Grid>
+
+                            <TextBlock Margin="0,14,0,6"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                       Text="可直接复制的 URL 模板案例" />
+                            <TextBox Height="375"
+                                     Padding="10"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                     Background="#F8FAFC"
+                                     BorderBrush="{StaticResource ModernDividerBrush}"
+                                     BorderThickness="1"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     VerticalScrollBarVisibility="Auto"
+                                     TextWrapping="NoWrap"
+                                     Text="# 案例1：固定打开一个网页&#x0a;https://example.com/dashboard&#x0a;&#x0a;# 案例2：使用快捷项名称进行搜索&#x0a;https://www.google.com/search?q={ShortcutName}&#x0a;&#x0a;# 案例3：向内部管理平台传递名称和目标路径&#x0a;https://example.com/device?name={ShortcutName}&amp;path={TargetPath}&#x0a;&#x0a;# 案例4：根据原始模块名查询文档&#x0a;https://example.com/docs/search?module={SourceModuleName}&#x0a;&#x0a;# 案例5：同时携带工作区和设备信息&#x0a;https://example.com/open?workspace={WorkspaceId}&amp;name={ShortcutName}&amp;path={TargetPath}&#x0a;&#x0a;# 案例6：使用备注作为查询条件&#x0a;https://example.com/search?keyword={Description}&#x0a;&#x0a;# 案例7：使用完整设备 ID 打开页面&#x0a;https://example.com/device?id={DeviceCode}&#x0a;&#x0a;# 案例8：分别传递设备类型和设备序号&#x0a;https://example.com/device?type={DeviceType}&amp;number={DeviceNumber}&#x0a;&#x0a;# 案例9：同时传递实例编号和设备 ID&#x0a;https://example.com/device?instance={InstanceId}&amp;device={DeviceCode}&#x0a;&#x0a;# 案例10：使用目标末级名称进行查询&#x0a;https://example.com/search?target={TargetName}" />
+
+                            <TextBlock Margin="0,12,0,0"
+                                       Foreground="{StaticResource ModernWeakTextBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Text="使用规则：&#x0a;变量区分大小写。&#x0a;普通可选变量没有内容时替换为空字符串。&#x0a;仅允许 http:// 和 https:// 地址。&#x0a;生成后的 URL 最长为 8192 个字符。&#x0a;设备 ID 必须是英文字母加数字，例如 TSSP001。&#x0a;设备序号保留前导零。&#x0a;派生变量无法提取时不会打开错误页面，而是显示具体原因。&#x0a;&#x0a;常见错误：&#x0a;错误：$env:VSL_SHORTCUT_NAME　正确：{ShortcutName}&#x0a;错误：file:///C:/Temp&#x0a;原因：Web 能力不能打开本地地址，本地文件或程序操作请使用 PowerShell 能力。" />
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="2"
+                        Margin="18,0,18,18"
+                        HorizontalAlignment="Right"
+                        Orientation="Horizontal">
+                <Button Style="{StaticResource ModernPrimaryButtonStyle}"
+                        Width="88"
+                        Margin="0,0,8,0"
+                        Command="{Binding SaveCommand}"
+                        Content="保存" />
+                <Button Style="{StaticResource ModernButtonStyle}"
+                        Width="88"
+                        Command="{Binding CancelCommand}"
+                        Content="取消" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

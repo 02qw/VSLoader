@@ -8,6 +8,8 @@ public sealed class WindowLayoutConfig
 
     public bool WasFactoryMapOpen { get; set; }
 
+    public string FactoryMapWindowState { get; set; } = FactoryMapWindowStateKinds.Normal;
+
     public FactoryMapViewStateConfig? FactoryMapView { get; set; }
 
     public ShortcutGridColumnLayoutConfig? ShortcutGridColumns { get; set; }

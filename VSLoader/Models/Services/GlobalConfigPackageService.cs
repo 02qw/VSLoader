@@ -6,7 +6,9 @@ namespace VSLoader.Services;
 
 public sealed class GlobalConfigPackageService
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
+    private const int LegacySchemaVersion = 1;
+    private const int CurrentFactoryMapLayoutVersion = FactoryMapLayoutService.CurrentLayoutVersion;
     private const string ExpectedAppName = "VSLoader";
     private readonly JsonSerializerOptions jsonOptions = new()
     {
@@ -28,19 +30,33 @@ public sealed class GlobalConfigPackageService
             }
 
             var result = GlobalConfigExportResult.Ok();
+            var workspaceSettings = CloneWorkspaceSettings(workspaceConfig);
             var package = new GlobalConfigPackage
             {
                 SchemaVersion = CurrentSchemaVersion,
                 AppName = ExpectedAppName,
                 ExportedAt = DateTimeOffset.Now.ToString("O"),
-                ProgramSettings = new GlobalProgramSettings
+                Workspace = new GlobalConfigWorkspaceSection
+                {
+                    Source = LoadWorkspaceSource(factoryMapLayoutPath, result.Warnings),
+                    Settings = workspaceSettings,
+                    FactoryMapLayout = LoadFactoryMapLayout(factoryMapLayoutPath, result.Warnings),
+                    InterfacePreferences = LoadInterfacePreferences(
+                        factoryMapLayoutPath,
+                        appSettings.SettingsPageOrder,
+                        result.Warnings)
+                },
+                MachineSettings = new GlobalProgramSettings
                 {
                     VSCodePath = appSettings.VSCodePath ?? string.Empty,
                     SoftwareUpdateManifestPath = appSettings.SoftwareUpdateManifestPath ?? string.Empty
-                },
-                WorkspaceConfig = CloneWorkspaceConfig(workspaceConfig),
-                FactoryMapLayout = LoadFactoryMapLayout(factoryMapLayoutPath, result.Warnings)
+                }
             };
+
+            if (!string.IsNullOrWhiteSpace(workspaceSettings.AdminUi.ProtectedPassword))
+            {
+                result.Warnings.Add("配置包包含 AdminUI 明文密码，请仅保存到可信位置。");
+            }
 
             var directory = Path.GetDirectoryName(packagePath);
             if (!string.IsNullOrWhiteSpace(directory))
@@ -62,8 +78,10 @@ public sealed class GlobalConfigPackageService
         string currentConfigPath,
         string currentFactoryMapLayoutPath,
         AppSettings appSettings,
-        Func<AppSettings, string?> resolveVSCodePath)
+        Func<AppSettings, string?> resolveVSCodePath,
+        IProgress<GlobalConfigOperationProgress>? progress = null)
     {
+        ReportProgress(progress, 10, "正在读取全局配置包...", Path.GetFileName(packagePath));
         GlobalConfigPackage package;
         try
         {
@@ -80,14 +98,24 @@ public sealed class GlobalConfigPackageService
             return GlobalConfigImportResult.Fail(validationError);
         }
 
+        ReportProgress(progress, 30, "正在校验工作区配置...", "快捷项、右键菜单能力和路径");
+        var resolved = ResolvePackage(package);
         var result = GlobalConfigImportResult.Ok();
-        NormalizeWorkspaceConfig(package.WorkspaceConfig);
-        AddPreflightWarnings(package, result);
+        var capabilityWarnings = NormalizeWorkspaceConfig(resolved.WorkspaceConfig);
+        result.Warnings.AddRange(capabilityWarnings);
+        var importedPowerShellCount = resolved.WorkspaceConfig.ContextMenuCapabilities.Items.Count(item =>
+            string.Equals(item.Kind, ContextMenuCapabilityKinds.PowerShell, StringComparison.Ordinal));
+        if (importedPowerShellCount > 0)
+        {
+            result.Warnings.Add($"配置包包含 {importedPowerShellCount} 个 PowerShell 能力，首次执行时需要本机确认信任。");
+        }
+        AddPreflightWarnings(resolved.WorkspaceConfig, result);
 
         try
         {
+            ReportProgress(progress, 50, "正在写入工作区配置...", "config.json");
             BackupIfExists(currentConfigPath, "config.import-backup");
-            WriteJson(currentConfigPath, package.WorkspaceConfig);
+            WriteJson(currentConfigPath, resolved.WorkspaceConfig);
             result.ImportedItems.Add("工作区配置");
         }
         catch (Exception ex)
@@ -95,15 +123,16 @@ public sealed class GlobalConfigPackageService
             return GlobalConfigImportResult.Fail($"当前工作区配置写入失败：{ex.Message}");
         }
 
-        if (package.FactoryMapLayout is not null)
+        if (resolved.FactoryMapLayout is not null)
         {
             try
             {
+                ReportProgress(progress, 65, "正在导入地图布局...", "factory-map.layout.json");
                 BackupIfExists(currentFactoryMapLayoutPath, "factory-map.layout.import-backup");
-                WriteJson(currentFactoryMapLayoutPath, package.FactoryMapLayout);
+                WriteJson(currentFactoryMapLayoutPath, resolved.FactoryMapLayout);
                 result.ImportedItems.Add("地图布局");
                 result.RequiresMapWindowReload = true;
-                AddFactoryMapWarnings(package, result);
+                AddFactoryMapWarnings(resolved.WorkspaceConfig, resolved.FactoryMapLayout, result);
             }
             catch (Exception ex)
             {
@@ -115,7 +144,15 @@ public sealed class GlobalConfigPackageService
             result.Warnings.Add("配置包不包含地图布局，已保留当前地图布局。");
         }
 
-        ApplyProgramSettings(package.ProgramSettings, appSettings, result, resolveVSCodePath);
+        ReportProgress(progress, 78, "正在应用界面偏好...", "地图视图、窗口状态和快捷项列宽");
+        ApplyInterfacePreferences(
+            currentConfigPath,
+            currentFactoryMapLayoutPath,
+            resolved.InterfacePreferences,
+            appSettings,
+            result);
+        ReportProgress(progress, 88, "正在校验本机路径...", "VSCode 和软件更新 manifest");
+        ApplyProgramSettings(resolved.MachineSettings, appSettings, result, resolveVSCodePath);
         return result;
     }
 
@@ -153,17 +190,125 @@ public sealed class GlobalConfigPackageService
             return "配置包不是 VSLoader 全局配置包。";
         }
 
-        if (package.SchemaVersion != CurrentSchemaVersion)
+        if (package.SchemaVersion != LegacySchemaVersion && package.SchemaVersion != CurrentSchemaVersion)
         {
             return $"配置包版本不支持：{package.SchemaVersion}。";
         }
 
-        if (package.WorkspaceConfig is null)
+        if (package.SchemaVersion == LegacySchemaVersion && package.WorkspaceConfig is null)
         {
             return "配置包格式无效，缺少 workspaceConfig。";
         }
 
+        if (package.SchemaVersion == CurrentSchemaVersion && package.Workspace?.Settings is null)
+        {
+            return "配置包格式无效，缺少 workspace.settings。";
+        }
+
+        var factoryMapLayout = package.SchemaVersion == LegacySchemaVersion
+            ? package.FactoryMapLayout
+            : package.Workspace?.FactoryMapLayout;
+        if (factoryMapLayout?.Version > CurrentFactoryMapLayoutVersion)
+        {
+            return $"配置包中的地图布局版本不支持：{factoryMapLayout.Version}。";
+        }
+
         return null;
+    }
+
+    private static ResolvedGlobalConfigPackage ResolvePackage(GlobalConfigPackage package)
+    {
+        if (package.SchemaVersion == LegacySchemaVersion)
+        {
+            return new ResolvedGlobalConfigPackage(
+                package.WorkspaceConfig ?? new AppConfig(),
+                package.FactoryMapLayout,
+                package.ProgramSettings ?? new GlobalProgramSettings(),
+                null);
+        }
+
+        var workspace = package.Workspace ?? new GlobalConfigWorkspaceSection();
+        return new ResolvedGlobalConfigPackage(
+            ConvertWorkspaceSettings(workspace.Settings ?? new GlobalConfigWorkspaceSettings()),
+            workspace.FactoryMapLayout,
+            package.MachineSettings ?? new GlobalProgramSettings(),
+            workspace.InterfacePreferences);
+    }
+
+    private GlobalConfigWorkspaceSource LoadWorkspaceSource(string factoryMapLayoutPath, List<string> warnings)
+    {
+        var workspaceDirectory = Path.GetDirectoryName(factoryMapLayoutPath);
+        if (string.IsNullOrWhiteSpace(workspaceDirectory))
+        {
+            return new GlobalConfigWorkspaceSource();
+        }
+
+        var metadataPath = Path.Combine(workspaceDirectory, "workspace.json");
+        if (!File.Exists(metadataPath))
+        {
+            return new GlobalConfigWorkspaceSource
+            {
+                Id = Path.GetFileName(workspaceDirectory),
+                Name = Path.GetFileName(workspaceDirectory)
+            };
+        }
+
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<WorkspaceMetadata>(File.ReadAllText(metadataPath), jsonOptions);
+            return new GlobalConfigWorkspaceSource
+            {
+                Id = metadata?.Id?.Trim() ?? string.Empty,
+                Name = metadata?.Name?.Trim() ?? string.Empty
+            };
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"工作区来源信息读取失败，本次仅导出业务配置：{ex.Message}");
+            return new GlobalConfigWorkspaceSource();
+        }
+    }
+
+    private GlobalConfigInterfacePreferences LoadInterfacePreferences(
+        string factoryMapLayoutPath,
+        IEnumerable<string>? settingsPageOrder,
+        List<string> warnings)
+    {
+        var preferences = new GlobalConfigInterfacePreferences
+        {
+            SettingsPageOrder = SettingsPageOrderService.Normalize(settingsPageOrder).ToList()
+        };
+        var workspaceDirectory = Path.GetDirectoryName(factoryMapLayoutPath);
+        if (string.IsNullOrWhiteSpace(workspaceDirectory))
+        {
+            return preferences;
+        }
+
+        var layoutPath = Path.Combine(workspaceDirectory, "window-layout.json");
+        if (!File.Exists(layoutPath))
+        {
+            return preferences;
+        }
+
+        try
+        {
+            var layout = JsonSerializer.Deserialize<WindowLayoutConfig>(File.ReadAllText(layoutPath), jsonOptions);
+            if (layout is null)
+            {
+                warnings.Add("当前窗口布局文件为空，本次未包含界面布局偏好。");
+                return preferences;
+            }
+
+            preferences.FactoryMapWindowState = NormalizePortableFactoryMapWindowState(layout.FactoryMapWindowState);
+            preferences.FactoryMapView = CloneFactoryMapView(layout.FactoryMapView);
+            preferences.ShortcutGridColumns = CloneShortcutGridColumns(layout.ShortcutGridColumns);
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"当前窗口布局读取失败，本次未包含界面布局偏好：{ex.Message}");
+        }
+
+        return preferences;
     }
 
     private FactoryMapLayoutConfig? LoadFactoryMapLayout(string layoutPath, List<string> warnings)
@@ -184,6 +329,12 @@ public sealed class GlobalConfigPackageService
                 return null;
             }
 
+            if (layout.Version > CurrentFactoryMapLayoutVersion)
+            {
+                warnings.Add($"当前地图布局版本不支持：{layout.Version}，本次未包含地图布局。");
+                return null;
+            }
+
             NormalizeFactoryMapLayout(layout);
             return layout;
         }
@@ -192,6 +343,153 @@ public sealed class GlobalConfigPackageService
             warnings.Add($"当前地图布局读取失败，本次未包含地图布局：{ex.Message}");
             return null;
         }
+    }
+
+    private void ApplyInterfacePreferences(
+        string currentConfigPath,
+        string currentFactoryMapLayoutPath,
+        GlobalConfigInterfacePreferences? preferences,
+        AppSettings appSettings,
+        GlobalConfigImportResult result)
+    {
+        if (preferences is null)
+        {
+            return;
+        }
+
+        if (preferences.SettingsPageOrder is { Count: > 0 })
+        {
+            appSettings.SettingsPageOrder = SettingsPageOrderService.Normalize(preferences.SettingsPageOrder).ToList();
+            result.ImportedItems.Add("设置页面顺序");
+            result.Warnings.Add("设置页面顺序属于程序级界面偏好，导入后会影响所有工作区。");
+        }
+
+        var workspaceDirectory = Path.GetDirectoryName(currentFactoryMapLayoutPath);
+        if (string.IsNullOrWhiteSpace(workspaceDirectory))
+        {
+            workspaceDirectory = Path.GetDirectoryName(currentConfigPath);
+        }
+
+        if (string.IsNullOrWhiteSpace(workspaceDirectory))
+        {
+            result.Warnings.Add("无法确定当前工作区目录，界面布局偏好未导入。");
+            return;
+        }
+
+        var windowLayoutPath = Path.Combine(workspaceDirectory, "window-layout.json");
+        try
+        {
+            var currentLayout = LoadWindowLayoutOrDefault(windowLayoutPath);
+            currentLayout.FactoryMapWindowState = NormalizePortableFactoryMapWindowState(
+                preferences.FactoryMapWindowState);
+
+            var importedView = CloneFactoryMapView(preferences.FactoryMapView);
+            if (preferences.FactoryMapView is not null && importedView is null)
+            {
+                result.Warnings.Add("配置包中的地图视图状态无效，已保留当前视图状态。");
+            }
+            else if (importedView is not null)
+            {
+                currentLayout.FactoryMapView = importedView;
+            }
+
+            var importedColumns = CloneShortcutGridColumns(preferences.ShortcutGridColumns);
+            if (preferences.ShortcutGridColumns is not null && importedColumns is null)
+            {
+                result.Warnings.Add("配置包中的快捷项列宽无效，已保留当前列宽。");
+            }
+            else if (importedColumns is not null)
+            {
+                currentLayout.ShortcutGridColumns = importedColumns;
+            }
+
+            BackupIfExists(windowLayoutPath, "window-layout.import-backup");
+            WriteJson(windowLayoutPath, currentLayout);
+            result.ImportedItems.Add("工作区界面偏好");
+            result.RequiresWindowLayoutReload = true;
+        }
+        catch (Exception ex)
+        {
+            result.Warnings.Add($"工作区界面偏好导入失败：{ex.Message}");
+        }
+    }
+
+    private WindowLayoutConfig LoadWindowLayoutOrDefault(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return new WindowLayoutConfig();
+        }
+
+        var json = File.ReadAllText(path);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new WindowLayoutConfig();
+        }
+
+        return JsonSerializer.Deserialize<WindowLayoutConfig>(json, jsonOptions)
+            ?? new WindowLayoutConfig();
+    }
+
+    private static string NormalizePortableFactoryMapWindowState(string? state)
+    {
+        return string.Equals(state, FactoryMapWindowStateKinds.WorkspaceMaximized, StringComparison.Ordinal)
+            ? FactoryMapWindowStateKinds.WorkspaceMaximized
+            : FactoryMapWindowStateKinds.Normal;
+    }
+
+    private static FactoryMapViewStateConfig? CloneFactoryMapView(FactoryMapViewStateConfig? source)
+    {
+        if (source is null
+            || !IsFinitePositive(source.FitScale)
+            || !IsFinitePositive(source.UserScale)
+            || !double.IsFinite(source.OffsetX)
+            || !double.IsFinite(source.OffsetY))
+        {
+            return null;
+        }
+
+        return new FactoryMapViewStateConfig
+        {
+            FitScale = source.FitScale,
+            UserScale = source.UserScale,
+            OffsetX = source.OffsetX,
+            OffsetY = source.OffsetY
+        };
+    }
+
+    private static ShortcutGridColumnLayoutConfig? CloneShortcutGridColumns(ShortcutGridColumnLayoutConfig? source)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var clone = new ShortcutGridColumnLayoutConfig
+        {
+            Name = NormalizeColumnWidth(source.Name),
+            Description = NormalizeColumnWidth(source.Description),
+            SourceModuleName = NormalizeColumnWidth(source.SourceModuleName),
+            UpdatedAt = NormalizeColumnWidth(source.UpdatedAt)
+        };
+        return clone.Name is null
+            && clone.Description is null
+            && clone.SourceModuleName is null
+            && clone.UpdatedAt is null
+                ? null
+                : clone;
+    }
+
+    private static double? NormalizeColumnWidth(double? width)
+    {
+        return width is > 0 && double.IsFinite(width.Value)
+            ? Math.Clamp(width.Value, 40, 2000)
+            : null;
+    }
+
+    private static bool IsFinitePositive(double value)
+    {
+        return double.IsFinite(value) && value > 0;
     }
 
     private static void ApplyProgramSettings(
@@ -247,9 +545,8 @@ public sealed class GlobalConfigPackageService
         }
     }
 
-    private static void AddPreflightWarnings(GlobalConfigPackage package, GlobalConfigImportResult result)
+    private static void AddPreflightWarnings(AppConfig config, GlobalConfigImportResult result)
     {
-        var config = package.WorkspaceConfig;
         if (!string.IsNullOrWhiteSpace(config.BatchImport.LastParentFolderPath) &&
             !Directory.Exists(config.BatchImport.LastParentFolderPath))
         {
@@ -270,18 +567,16 @@ public sealed class GlobalConfigPackageService
         }
     }
 
-    private static void AddFactoryMapWarnings(GlobalConfigPackage package, GlobalConfigImportResult result)
+    private static void AddFactoryMapWarnings(
+        AppConfig workspaceConfig,
+        FactoryMapLayoutConfig factoryMapLayout,
+        GlobalConfigImportResult result)
     {
-        if (package.FactoryMapLayout is null)
-        {
-            return;
-        }
-
-        var shortcutKeys = package.WorkspaceConfig.Shortcuts
+        var shortcutKeys = workspaceConfig.Shortcuts
             .Select(shortcut => shortcut.TargetPath?.Trim() ?? string.Empty)
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var unmatchedNodeCount = package.FactoryMapLayout.Devices.Count(device =>
+        var unmatchedNodeCount = factoryMapLayout.Devices.Count(device =>
             !string.IsNullOrWhiteSpace(device.Key) && !shortcutKeys.Contains(device.Key.Trim()));
 
         if (unmatchedNodeCount > 0)
@@ -309,6 +604,15 @@ public sealed class GlobalConfigPackageService
         File.WriteAllText(path, JsonSerializer.Serialize(value, jsonOptions));
     }
 
+    private static void ReportProgress(
+        IProgress<GlobalConfigOperationProgress>? progress,
+        int value,
+        string message,
+        string currentItem)
+    {
+        progress?.Report(new GlobalConfigOperationProgress(value, message, currentItem));
+    }
+
     private static void BackupIfExists(string path, string prefix)
     {
         var directory = Path.GetDirectoryName(path);
@@ -326,23 +630,47 @@ public sealed class GlobalConfigPackageService
         File.Copy(path, backupPath, false);
     }
 
-    private static AppConfig CloneWorkspaceConfig(AppConfig config)
+    private static GlobalConfigWorkspaceSettings CloneWorkspaceSettings(AppConfig config)
     {
-        NormalizeWorkspaceConfig(config);
-        return new AppConfig
+        _ = NormalizeWorkspaceConfig(config);
+        return new GlobalConfigWorkspaceSettings
         {
-            VSCodePath = config.VSCodePath,
             Shortcuts = config.Shortcuts.Select(shortcut => shortcut.Clone()).ToList(),
             AdminUi = config.AdminUi.Clone(),
             Hotkey = config.Hotkey.Clone(),
             MapHotkey = config.MapHotkey.Clone(),
             BatchImport = config.BatchImport.Clone(),
             WebUi = config.WebUi.Clone(),
-            UpdateCheck = config.UpdateCheck.Clone()
+            UpdateCheck = new GlobalConfigWorkspaceUpdateSettings
+            {
+                GlobalConfigPackagePath = config.UpdateCheck.GlobalConfigPackagePath?.Trim() ?? string.Empty
+            },
+            ContextMenuCapabilities = config.ContextMenuCapabilities.Clone()
         };
     }
 
-    private static void NormalizeWorkspaceConfig(AppConfig config)
+    private static AppConfig ConvertWorkspaceSettings(GlobalConfigWorkspaceSettings settings)
+    {
+        settings ??= new GlobalConfigWorkspaceSettings();
+        return new AppConfig
+        {
+            VSCodePath = string.Empty,
+            Shortcuts = settings.Shortcuts?.Select(shortcut => shortcut.Clone()).ToList() ?? [],
+            AdminUi = settings.AdminUi?.Clone() ?? new AdminUiConfig(),
+            Hotkey = settings.Hotkey?.Clone() ?? new HotkeyConfig(),
+            MapHotkey = settings.MapHotkey?.Clone() ?? new MapHotkeyConfig(),
+            BatchImport = settings.BatchImport?.Clone() ?? new BatchImportConfig(),
+            WebUi = settings.WebUi?.Clone() ?? new WebUiConfig(),
+            UpdateCheck = new UpdateCheckConfig
+            {
+                GlobalConfigPackagePath = settings.UpdateCheck?.GlobalConfigPackagePath?.Trim() ?? string.Empty
+            },
+            ContextMenuCapabilities = settings.ContextMenuCapabilities?.Clone()
+                ?? new ContextMenuCapabilityCollectionConfig()
+        };
+    }
+
+    private static IReadOnlyList<string> NormalizeWorkspaceConfig(AppConfig config)
     {
         config.Shortcuts ??= [];
         config.AdminUi ??= new AdminUiConfig();
@@ -351,8 +679,10 @@ public sealed class GlobalConfigPackageService
         config.BatchImport ??= new BatchImportConfig();
         config.WebUi ??= new WebUiConfig();
         config.UpdateCheck ??= new UpdateCheckConfig();
+        config.ContextMenuCapabilities ??= new ContextMenuCapabilityCollectionConfig();
         config.VSCodePath ??= string.Empty;
         NormalizeMapHotkeyConfig(config.MapHotkey);
+        var capabilityWarnings = new ContextMenuCapabilityConfigService().Normalize(config.ContextMenuCapabilities);
 
         foreach (var shortcut in config.Shortcuts)
         {
@@ -361,6 +691,8 @@ public sealed class GlobalConfigPackageService
             shortcut.Description ??= string.Empty;
             shortcut.SourceModuleName ??= string.Empty;
         }
+
+        return capabilityWarnings;
     }
 
     private static void NormalizeMapHotkeyConfig(MapHotkeyConfig mapHotkey)
@@ -397,18 +729,64 @@ public sealed class GlobalConfigPackageService
     {
         layout.Canvas ??= new FactoryMapCanvas { Width = 1600, Height = 900 };
         layout.Devices ??= [];
-        layout.Edges ??= [];
+        layout.ConnectionPoints ??= [];
+        layout.Segments ??= [];
 
         foreach (var device in layout.Devices)
         {
+            device.Id ??= string.Empty;
             device.Key ??= string.Empty;
             device.Name ??= string.Empty;
+        }
+
+        foreach (var point in layout.ConnectionPoints)
+        {
+            point.Id ??= string.Empty;
+            point.Kind = FactoryMapConnectionPointKinds.Normalize(point.Kind);
+            point.OwnerNodeId ??= string.Empty;
+            point.Side ??= string.Empty;
+            point.JunctionAxis = point.Kind == FactoryMapConnectionPointKinds.Junction
+                ? FactoryMapJunctionAxes.Normalize(point.JunctionAxis)
+                : string.Empty;
+        }
+
+        foreach (var segment in layout.Segments)
+        {
+            segment.Id ??= string.Empty;
+            segment.FromPointId ??= string.Empty;
+            segment.ToPointId ??= string.Empty;
+        }
+
+        if (layout.Version >= 4)
+        {
+            layout.Connectors = null;
+            layout.Edges = null;
+            return;
+        }
+
+        layout.Connectors ??= [];
+        layout.Edges ??= [];
+        foreach (var connector in layout.Connectors)
+        {
+            connector.Id ??= string.Empty;
         }
 
         foreach (var edge in layout.Edges)
         {
             edge.From ??= string.Empty;
+            edge.FromKind = string.Equals(edge.FromKind, FactoryMapEndpointKinds.Connector, StringComparison.OrdinalIgnoreCase)
+                ? FactoryMapEndpointKinds.Connector
+                : FactoryMapEndpointKinds.Device;
             edge.To ??= string.Empty;
+            edge.ToKind = string.Equals(edge.ToKind, FactoryMapEndpointKinds.Connector, StringComparison.OrdinalIgnoreCase)
+                ? FactoryMapEndpointKinds.Connector
+                : FactoryMapEndpointKinds.Device;
         }
     }
+
+    private sealed record ResolvedGlobalConfigPackage(
+        AppConfig WorkspaceConfig,
+        FactoryMapLayoutConfig? FactoryMapLayout,
+        GlobalProgramSettings MachineSettings,
+        GlobalConfigInterfacePreferences? InterfacePreferences);
 }

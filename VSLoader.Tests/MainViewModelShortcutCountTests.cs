@@ -57,6 +57,51 @@ public sealed class MainViewModelShortcutCountTests : IDisposable
         Assert.Equal("1 / 2", viewModel.ShortcutCountText);
     }
 
+    [Fact]
+    public void SearchText_refreshes_the_view_without_raising_shortcuts_changed()
+    {
+        var configService = new ConfigService(_configDirectory);
+        configService.Save(new AppConfig
+        {
+            VSCodePath = @"C:\Tools\Code.exe",
+            Shortcuts =
+            [
+                new ShortcutItem { Name = "热贴机_001", TargetPath = @"C:\A" },
+                new ShortcutItem { Name = "垂直炉_001", TargetPath = @"C:\B" }
+            ]
+        });
+        var viewModel = CreateViewModel(configService, _configDirectory);
+        var shortcutsChangedCount = 0;
+        viewModel.ShortcutsChanged += (_, _) => shortcutsChangedCount++;
+
+        viewModel.SearchText = "不存在";
+
+        Assert.Equal("0 / 2", viewModel.ShortcutCountText);
+        Assert.Equal(0, shortcutsChangedCount);
+    }
+
+    [Fact]
+    public void ApplySort_refreshes_the_view_without_raising_shortcuts_changed()
+    {
+        var configService = new ConfigService(_configDirectory);
+        configService.Save(new AppConfig
+        {
+            VSCodePath = @"C:\Tools\Code.exe",
+            Shortcuts =
+            [
+                new ShortcutItem { Name = "B", TargetPath = @"C:\B" },
+                new ShortcutItem { Name = "A", TargetPath = @"C:\A" }
+            ]
+        });
+        var viewModel = CreateViewModel(configService, _configDirectory);
+        var shortcutsChangedCount = 0;
+        viewModel.ShortcutsChanged += (_, _) => shortcutsChangedCount++;
+
+        viewModel.ApplySort(ShortcutSortField.UpdatedAt);
+
+        Assert.Equal(0, shortcutsChangedCount);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_configDirectory))

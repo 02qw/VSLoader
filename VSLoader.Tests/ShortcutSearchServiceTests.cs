@@ -45,4 +45,10 @@ public sealed class ShortcutSearchServiceTests
     {
         Assert.False(_service.IsTextMatch("热贴机_012", "ysj"));
     }
+
+    [Fact]
+    public void IsTextMatch_skips_pinyin_index_for_unmatched_chinese_keyword()
+    {
+        Assert.False(_service.IsTextMatch("热贴机_012", "完全不存在"));
+    }
 }

@@ -8,7 +8,7 @@ public sealed class AllWindowsProductVisualTests
     [InlineData("WorkspaceNameDialog.xaml", "ModernDialogSurfaceStyle", "ModernTextBoxStyle", "CreateCommand", "CancelCommand")]
     [InlineData("ShortcutEditWindow.xaml", "ModernDialogSurfaceStyle", "ModernMultilineTextBoxStyle", "SaveCommand", "CancelCommand")]
     [InlineData("BatchImportWindow.xaml", "ModernSectionBorderStyle", "ModernDataGridStyle", "ScanPreviewCommand", "ConfirmImportCommand")]
-    [InlineData("MessageDialogWindow.xaml", "ModernDialogSurfaceStyle", "ModernDialogPrimaryButtonStyle", "YesButton_Click", "OkButton_Click")]
+    [InlineData("MessageDialogWindow.xaml", "ModernMessageDialogSurfaceStyle", "ModernDialogPrimaryButtonStyle", "YesButton_Click", "OkButton_Click")]
     [InlineData("FactoryMapWindow.xaml", "ModernToolStripStyle", "ModernContextMenuStyle", "DownloadAdminUiLinksButton_Click", "EditModeButton_Click")]
     public void Main_application_windows_use_product_visual_resources_and_keep_actions(
         string fileName,

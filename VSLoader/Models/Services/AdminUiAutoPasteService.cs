@@ -1,22 +1,21 @@
+using System.Diagnostics;
 using VSLoader.Models;
 
 namespace VSLoader.Services;
 
 public sealed class AdminUiAutoPasteService
 {
+    internal const int ForegroundPollIntervalMilliseconds = 100;
+    internal const int DialogStabilityDelayMilliseconds = 30;
+
     private readonly Func<ForegroundWindowInfo?> getForegroundWindowInfo;
-    private readonly Func<IReadOnlyList<ForegroundWindowInfo>> getTopLevelWindows;
-    private readonly Action<ForegroundWindowInfo> sendPasteAndEnter;
+    private readonly Func<ForegroundWindowInfo, string, CancellationToken, Task<AdminUiAutoPasteResult>> sendTextAndEnterAsync;
     private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;
+    private readonly Func<DateTimeOffset> getNow;
     private readonly AdminUiAutoPasteLogService logService;
 
     public AdminUiAutoPasteService()
-        : this(new ForegroundWindowService(), new KeyboardInputService())
-    {
-    }
-
-    public AdminUiAutoPasteService(ForegroundWindowService foregroundWindowService, KeyboardInputService keyboardInputService)
-        : this(foregroundWindowService, keyboardInputService, new AdminUiAutoPasteLogService())
+        : this(new ForegroundWindowService(), new KeyboardInputService(), new AdminUiAutoPasteLogService())
     {
     }
 
@@ -26,192 +25,93 @@ public sealed class AdminUiAutoPasteService
         AdminUiAutoPasteLogService logService)
         : this(
             foregroundWindowService.GetForegroundWindowInfo,
-            new TopLevelWindowService().GetTopLevelWindows,
-            window => keyboardInputService.SendPasteAndEnter(window, logService),
+            (window, password, token) => keyboardInputService.SendTextAndEnterIfFocusedAsync(window, password, token, logService),
             Task.Delay,
+            () => DateTimeOffset.UtcNow,
             logService)
     {
     }
 
     internal AdminUiAutoPasteService(
         Func<ForegroundWindowInfo?> getForegroundWindowInfo,
-        Action sendPasteAndEnter,
+        Func<ForegroundWindowInfo, string, CancellationToken, Task<AdminUiAutoPasteResult>> sendTextAndEnterAsync,
         Func<TimeSpan, CancellationToken, Task> delayAsync,
-        AdminUiAutoPasteLogService? logService = null)
-        : this(getForegroundWindowInfo, Array.Empty<ForegroundWindowInfo>, _ => sendPasteAndEnter(), delayAsync, logService)
-    {
-    }
-
-    internal AdminUiAutoPasteService(
-        Func<ForegroundWindowInfo?> getForegroundWindowInfo,
-        Action<ForegroundWindowInfo> sendPasteAndEnter,
-        Func<TimeSpan, CancellationToken, Task> delayAsync,
-        AdminUiAutoPasteLogService? logService = null)
-        : this(getForegroundWindowInfo, Array.Empty<ForegroundWindowInfo>, sendPasteAndEnter, delayAsync, logService)
-    {
-    }
-
-    internal AdminUiAutoPasteService(
-        Func<ForegroundWindowInfo?> getForegroundWindowInfo,
-        Func<IReadOnlyList<ForegroundWindowInfo>> getTopLevelWindows,
-        Action<ForegroundWindowInfo> sendPasteAndEnter,
-        Func<TimeSpan, CancellationToken, Task> delayAsync,
+        Func<DateTimeOffset>? getNow = null,
         AdminUiAutoPasteLogService? logService = null)
     {
         this.getForegroundWindowInfo = getForegroundWindowInfo;
-        this.getTopLevelWindows = getTopLevelWindows;
-        this.sendPasteAndEnter = sendPasteAndEnter;
+        this.sendTextAndEnterAsync = sendTextAndEnterAsync;
         this.delayAsync = delayAsync;
+        this.getNow = getNow ?? (() => DateTimeOffset.UtcNow);
         this.logService = logService ?? new AdminUiAutoPasteLogService();
     }
 
-    public async Task<AdminUiAutoPasteResult> TryPasteAsync(AdminUiConfig config, CancellationToken cancellationToken = default)
+    public async Task<AdminUiAutoPasteResult> TryAutoLoginAsync(
+        AdminUiConfig config,
+        string password,
+        CancellationToken cancellationToken = default)
     {
         if (!config.AutoPastePasswordEnabled)
         {
-            return AdminUiAutoPasteResult.Fail("未启用自动粘贴。");
+            return AdminUiAutoPasteResult.InputFailed("未启用自动登录。");
         }
 
-        logService.LogStart(config);
-        await delayAsync(GetInitialDelay(config), cancellationToken);
+        if (string.IsNullOrEmpty(password))
+        {
+            return AdminUiAutoPasteResult.PasswordEmpty();
+        }
 
+        var stopwatch = Stopwatch.StartNew();
         var timeout = TimeSpan.FromSeconds(Math.Clamp(config.AutoPasteTimeoutSeconds, 1, 60));
-        var pollInterval = TimeSpan.FromMilliseconds(Math.Clamp(config.AutoPastePollIntervalMilliseconds, 50, 2000));
-        var stopAt = DateTimeOffset.Now + timeout;
+        var stopAt = getNow() + timeout;
 
-        while (DateTimeOffset.Now < stopAt)
+        while (getNow() < stopAt)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            var window = FindAdminUiDialogWindow(config);
-            if (window is null)
+            var window = getForegroundWindowInfo();
+            if (IsAdminUiDialogWindow(window, config))
             {
-                logService.LogPoll(null, titleMatch: false, processMatch: false, classMatch: false);
-                await delayAsync(pollInterval, cancellationToken);
-                continue;
+                logService.LogDialogMatched(window!, stopwatch.ElapsedMilliseconds);
+                await delayAsync(TimeSpan.FromMilliseconds(DialogStabilityDelayMilliseconds), cancellationToken).ConfigureAwait(false);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var stableWindow = getForegroundWindowInfo();
+                var stable = stableWindow?.Handle == window!.Handle;
+                logService.LogStabilityCheck(window, stableWindow, stable);
+                if (!stable)
+                {
+                    logService.LogFocusLost("StabilityCheck", window, stableWindow);
+                    return AdminUiAutoPasteResult.FocusLostBeforeInput(window);
+                }
+
+                return await sendTextAndEnterAsync(window, password, cancellationToken).ConfigureAwait(false);
             }
 
-            var match = EvaluateAdminUiDialogWindow(window, config);
-            logService.LogPoll(window, match.TitleMatch, match.ProcessMatch, match.ClassMatch);
-            if (match.IsMatch)
-            {
-                logService.LogSend(window);
-                try
-                {
-                    sendPasteAndEnter(window);
-                    logService.LogSendCompleted(window);
-                    return AdminUiAutoPasteResult.Ok(window);
-                }
-                catch (Exception ex)
-                {
-                    logService.LogError(ex);
-                    return AdminUiAutoPasteResult.Fail($"自动粘贴按键发送失败：{ex.Message}");
-                }
-            }
-
-            await delayAsync(pollInterval, cancellationToken);
+            await delayAsync(TimeSpan.FromMilliseconds(ForegroundPollIntervalMilliseconds), cancellationToken).ConfigureAwait(false);
         }
 
-        const string timeoutMessage = "等待超时，未检测到 AdminUI 登录窗口。";
-        logService.LogTimeout(timeoutMessage);
-        return AdminUiAutoPasteResult.Fail(timeoutMessage);
-    }
-
-    internal static bool IsAdminUiWindow(ForegroundWindowInfo? window, AdminUiConfig config)
-    {
-        return EvaluateAdminUiWindow(window, config).IsMatch;
+        stopwatch.Stop();
+        logService.LogTimeout(stopwatch.ElapsedMilliseconds);
+        return AdminUiAutoPasteResult.TimedOut();
     }
 
     internal static bool IsAdminUiDialogWindow(ForegroundWindowInfo? window, AdminUiConfig config)
     {
-        return EvaluateAdminUiDialogWindow(window, config).IsMatch;
-    }
-
-    internal static AdminUiWindowMatch EvaluateAdminUiWindow(ForegroundWindowInfo? window, AdminUiConfig config)
-    {
         if (window is null
+            || window.Handle == IntPtr.Zero
             || string.IsNullOrWhiteSpace(window.Title)
             || string.IsNullOrWhiteSpace(window.ProcessName))
         {
-            return new AdminUiWindowMatch(false, false, false, false);
+            return false;
         }
 
         var titleKeyword = config.AutoPasteWindowTitleKeyword?.Trim();
         var titleMatch = !string.IsNullOrWhiteSpace(titleKeyword)
             && window.Title.Contains(titleKeyword, StringComparison.OrdinalIgnoreCase);
-
         var allowedProcesses = ParseProcessNames(config.AutoPasteProcessNames);
-        var processMatch = allowedProcesses.Contains(window.ProcessName.Trim(), StringComparer.OrdinalIgnoreCase);
-        var classMatch = IsSafeAdminUiWindowClass(window.ClassName);
-        return new AdminUiWindowMatch(titleMatch && processMatch && classMatch, titleMatch, processMatch, classMatch);
-    }
-
-    internal static AdminUiWindowMatch EvaluateAdminUiDialogWindow(ForegroundWindowInfo? window, AdminUiConfig config)
-    {
-        if (window is null
-            || string.IsNullOrWhiteSpace(window.Title)
-            || string.IsNullOrWhiteSpace(window.ProcessName))
-        {
-            return new AdminUiWindowMatch(false, false, false, false);
-        }
-
-        var baseMatch = EvaluateAdminUiWindow(window, config);
-        var classMatch = IsStrictDialogWindow(window);
-        return new AdminUiWindowMatch(
-            baseMatch.TitleMatch && baseMatch.ProcessMatch && classMatch,
-            baseMatch.TitleMatch,
-            baseMatch.ProcessMatch,
-            classMatch);
-    }
-
-    private ForegroundWindowInfo? FindAdminUiDialogWindow(AdminUiConfig config)
-    {
-        IReadOnlyList<ForegroundWindowInfo> windows;
-        try
-        {
-            windows = getTopLevelWindows();
-        }
-        catch (Exception ex)
-        {
-            logService.LogError(ex);
-            return null;
-        }
-
-        logService.LogWindowScanStart(windows.Count);
-        ForegroundWindowInfo? match = null;
-        foreach (var window in windows)
-        {
-            var result = EvaluateAdminUiDialogWindow(window, config);
-            if (result.IsMatch)
-            {
-                match = window;
-                logService.LogWindowMatch(window);
-                break;
-            }
-        }
-
-        logService.LogWindowScanEnd(windows.Count, match is null ? 0 : 1);
-        return match;
-    }
-
-    private static bool IsSafeAdminUiWindowClass(string? className)
-    {
-        if (string.IsNullOrWhiteSpace(className))
-        {
-            return true;
-        }
-
-        return !string.Equals(className.Trim(), "SunAwtFrame", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsStrictDialogWindow(ForegroundWindowInfo? window)
-    {
-        return string.Equals(window?.ClassName?.Trim(), "SunAwtDialog", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static TimeSpan GetInitialDelay(AdminUiConfig config)
-    {
-        return TimeSpan.FromMilliseconds(Math.Clamp(config.AutoPasteInitialDelayMilliseconds, 0, 30000));
+        var processMatch = allowedProcesses.Contains(window.ProcessName.Trim());
+        var classMatch = string.Equals(window.ClassName?.Trim(), "SunAwtDialog", StringComparison.OrdinalIgnoreCase);
+        return titleMatch && processMatch && classMatch;
     }
 
     private static HashSet<string> ParseProcessNames(string? processNames)
@@ -221,5 +121,3 @@ public sealed class AdminUiAutoPasteService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 }
-
-internal sealed record AdminUiWindowMatch(bool IsMatch, bool TitleMatch, bool ProcessMatch, bool ClassMatch);

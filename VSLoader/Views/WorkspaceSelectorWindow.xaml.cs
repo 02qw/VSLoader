@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using VSLoader.Behaviors;
 using VSLoader.Services;
 using VSLoader.ViewModels;
 using WpfBrushes = System.Windows.Media.Brushes;
@@ -81,6 +82,7 @@ public partial class WorkspaceSelectorWindow : Window
             BorderBrush = new WpfSolidColorBrush(WpfColor.FromRgb(209, 213, 219)),
             BorderThickness = new Thickness(1)
         };
+        ContextMenuInputBehavior.SetSuppressRightClickActivation(menu, true);
         if (System.Windows.Application.Current.TryFindResource("ModernContextMenuStyle") is Style menuStyle)
         {
             menu.Style = menuStyle;

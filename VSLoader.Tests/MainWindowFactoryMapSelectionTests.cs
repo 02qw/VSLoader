@@ -22,12 +22,17 @@ public sealed class MainWindowFactoryMapSelectionTests
         var mainWindowCode = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
             "VSLoader",
             "MainWindow.xaml.cs"));
+        var mapWindowCode = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
+            "VSLoader",
+            "Views",
+            "FactoryMapWindow.xaml.cs"));
         var editWindowCode = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
             "VSLoader",
             "Views",
             "ShortcutEditWindow.xaml.cs"));
 
-        Assert.Contains("EditShortcutFromMap(shortcut)", mainWindowCode);
+        Assert.Contains("EditShortcutFromMap,", mainWindowCode);
+        Assert.Contains("editShortcut(device.Shortcut)", mapWindowCode);
         Assert.DoesNotContain("viewModel.EditShortcutCommand.Execute(null)", mainWindowCode);
         Assert.Contains("ShortcutEditWindow(ShortcutEditViewModel viewModel, Window? owner = null)", editWindowCode);
         Assert.Contains("Owner = owner ?? System.Windows.Application.Current.MainWindow", editWindowCode);

@@ -332,7 +332,7 @@ public sealed class UpdateCheckService
             throw new InvalidOperationException("AppName 不是 VSLoader。");
         }
 
-        if (package.SchemaVersion != 1)
+        if (package.SchemaVersion is not 1 and not 2)
         {
             throw new InvalidOperationException($"SchemaVersion 不支持：{package.SchemaVersion}。");
         }
