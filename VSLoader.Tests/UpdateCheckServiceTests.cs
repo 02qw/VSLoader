@@ -36,6 +36,117 @@ public sealed class UpdateCheckServiceTests : IDisposable
     }
 
     [Fact]
+    public void MigrateLegacyUpdateTimeFiles_merges_the_newest_baseline_without_downgrade()
+    {
+        var globalPath = Path.Combine(_rootPath, "global-updateTime.json");
+        var olderPath = Path.Combine(_rootPath, "workspace-a", "updateTime.json");
+        var newerPath = Path.Combine(_rootPath, "workspace-b", "updateTime.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(olderPath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(newerPath)!);
+
+        var older = new UpdateTimeState
+        {
+            GlobalConfig = new UpdateGlobalConfigState
+            {
+                LastSeenWriteTimeUtc = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+                LastUsedExportedAt = new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.FromHours(8))
+            },
+            Software = new UpdateSoftwareState { LastUsedVersion = "4.0.0" }
+        };
+        var newer = new UpdateTimeState
+        {
+            GlobalConfig = new UpdateGlobalConfigState
+            {
+                LastSeenWriteTimeUtc = new DateTime(2026, 7, 2, 0, 0, 0, DateTimeKind.Utc),
+                LastUsedExportedAt = new DateTimeOffset(2026, 7, 2, 8, 0, 0, TimeSpan.FromHours(8))
+            },
+            Software = new UpdateSoftwareState { LastUsedVersion = "4.1.0" }
+        };
+        WriteStateTo(olderPath, older);
+        WriteStateTo(newerPath, newer);
+
+        var olderPackagePath = Path.Combine(_rootPath, "package-a.json");
+        var newerPackagePath = Path.Combine(_rootPath, "package-b.json");
+        var result = _service.MigrateLegacyUpdateTimeFiles(globalPath,
+        [
+            new LegacyUpdateTimeSource(olderPath, olderPackagePath),
+            new LegacyUpdateTimeSource(newerPath, newerPackagePath)
+        ]);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var migrated = ReadStateFrom(globalPath);
+        Assert.Equal(older.GlobalConfig.LastUsedExportedAt, migrated.GlobalConfigs[Path.GetFullPath(olderPackagePath)].LastUsedExportedAt);
+        Assert.Equal(newer.GlobalConfig.LastUsedExportedAt, migrated.GlobalConfigs[Path.GetFullPath(newerPackagePath)].LastUsedExportedAt);
+        Assert.Equal("4.1.0", migrated.Software.LastUsedVersion);
+
+        WriteStateTo(olderPath, older);
+        var secondResult = _service.MigrateLegacyUpdateTimeFiles(globalPath,
+            [new LegacyUpdateTimeSource(olderPath, olderPackagePath)]);
+
+        Assert.True(secondResult.Success, secondResult.ErrorMessage);
+        Assert.Equal("4.1.0", ReadStateFrom(globalPath).Software.LastUsedVersion);
+    }
+
+    [Fact]
+    public void Global_config_baselines_are_isolated_by_package_path()
+    {
+        var packageA = CreateGlobalConfigPackage("package-a.json",
+            new DateTimeOffset(2026, 7, 8, 1, 0, 0, TimeSpan.FromHours(8)),
+            new DateTime(2026, 7, 7, 17, 0, 0, DateTimeKind.Utc));
+        var packageB = CreateGlobalConfigPackage("package-b.json",
+            new DateTimeOffset(2026, 7, 9, 1, 0, 0, TimeSpan.FromHours(8)),
+            new DateTime(2026, 7, 8, 17, 0, 0, DateTimeKind.Utc));
+        WriteState(new UpdateTimeState
+        {
+            GlobalConfigs = new Dictionary<string, UpdateGlobalConfigState>(StringComparer.OrdinalIgnoreCase)
+            {
+                [Path.GetFullPath(packageA)] = new UpdateGlobalConfigState
+                {
+                    LastSeenWriteTimeUtc = File.GetLastWriteTimeUtc(packageA).AddHours(-1),
+                    LastUsedExportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8))
+                },
+                [Path.GetFullPath(packageB)] = new UpdateGlobalConfigState
+                {
+                    LastSeenWriteTimeUtc = File.GetLastWriteTimeUtc(packageB),
+                    LastUsedExportedAt = new DateTimeOffset(2026, 7, 9, 1, 0, 0, TimeSpan.FromHours(8))
+                }
+            }
+        });
+
+        var resultA = _service.Check(new UpdateCheckConfig { GlobalConfigPackagePath = packageA }, _updateTimePath, new Version(4, 0));
+        var resultB = _service.Check(new UpdateCheckConfig { GlobalConfigPackagePath = packageB }, _updateTimePath, new Version(4, 0));
+
+        Assert.Contains("全局配置", resultA.UpdatedItems);
+        Assert.Equal(Path.GetFullPath(packageA), resultA.DetectedGlobalConfigPath);
+        Assert.DoesNotContain("全局配置", resultB.UpdatedItems);
+    }
+
+    [Fact]
+    public void MarkGlobalConfigImported_seeds_configured_path_from_imported_package_time()
+    {
+        var importedPackage = CreateGlobalConfigPackage("downloaded-package.json",
+            new DateTimeOffset(2026, 7, 10, 1, 0, 0, TimeSpan.FromHours(8)),
+            new DateTime(2026, 7, 9, 17, 0, 0, DateTimeKind.Utc));
+        var configuredPackage = CreateGlobalConfigPackage("server-package.json",
+            new DateTimeOffset(2026, 7, 11, 1, 0, 0, TimeSpan.FromHours(8)),
+            new DateTime(2026, 7, 10, 17, 0, 0, DateTimeKind.Utc));
+
+        var markResult = _service.MarkGlobalConfigImported(
+            importedPackage,
+            configuredPackage,
+            _updateTimePath);
+
+        var checkResult = _service.Check(
+            new UpdateCheckConfig { GlobalConfigPackagePath = configuredPackage },
+            _updateTimePath,
+            new Version(4, 0));
+
+        Assert.True(markResult.Success, markResult.ErrorMessage);
+        Assert.Contains("全局配置", checkResult.UpdatedItems);
+        Assert.Equal(Path.GetFullPath(configuredPackage), checkResult.DetectedGlobalConfigPath);
+    }
+
+    [Fact]
     public void Global_config_package_new_exported_at_shows_update_notice()
     {
         var baselineExportedAt = new DateTimeOffset(2026, 7, 7, 1, 0, 0, TimeSpan.FromHours(8));
@@ -360,12 +471,23 @@ public sealed class UpdateCheckServiceTests : IDisposable
 
     private void WriteState(UpdateTimeState state)
     {
-        File.WriteAllText(_updateTimePath, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+        WriteStateTo(_updateTimePath, state);
     }
 
     private UpdateTimeState ReadState()
     {
-        return JsonSerializer.Deserialize<UpdateTimeState>(File.ReadAllText(_updateTimePath))!;
+        return ReadStateFrom(_updateTimePath);
+    }
+
+    private static void WriteStateTo(string path, UpdateTimeState state)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static UpdateTimeState ReadStateFrom(string path)
+    {
+        return JsonSerializer.Deserialize<UpdateTimeState>(File.ReadAllText(path))!;
     }
 
     public void Dispose()

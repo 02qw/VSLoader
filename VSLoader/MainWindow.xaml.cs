@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -39,6 +40,8 @@ public partial class MainWindow : Window
     private readonly AppSettingsService _appSettingsService;
     private readonly WorkspaceContext _workspaceContext;
     private readonly WindowLayoutService _windowLayoutService;
+    private readonly UpdateCheckService _updateCheckService = new();
+    private readonly string _updateTimePath;
     private readonly RuntimeLayoutState _runtimeLayoutState = new();
     private readonly InitialLayoutRestoreGuard _initialLayoutRestoreGuard = new();
     private CancellationTokenSource? _layoutSaveDebounceCts;
@@ -63,6 +66,8 @@ public partial class MainWindow : Window
         _appSettingsService = appSettingsService;
         _workspaceContext = workspaceContext;
         _windowLayoutService = new WindowLayoutService(workspaceContext.RootPath);
+        _updateTimePath = UpdateTimePathService.GlobalUpdateTimePath;
+        MigrateLegacyUpdateTimeFiles();
 
         InitializeComponent();
         DataContext = CreateMainViewModel();
@@ -98,12 +103,42 @@ public partial class MainWindow : Window
             new ShortcutSearchService(),
             new PasswordProtectionService(),
             new ClipboardService(),
-            new UpdateCheckService(),
-            _workspaceContext.UpdateTimePath,
+            _updateCheckService,
+            _updateTimePath,
             factoryMapLayoutPath: _workspaceContext.FactoryMapLayoutPath,
             workspaceId: _workspaceContext.Id);
         viewModel.RequestApplicationExit = RequestRealApplicationExit;
         return viewModel;
+    }
+
+    private void MigrateLegacyUpdateTimeFiles()
+    {
+        var legacySources = _appSettings.Workspaces
+            .Where(workspace => !string.IsNullOrWhiteSpace(workspace.Path))
+            .Select(workspace => CreateLegacyUpdateTimeSource(workspace.Path))
+            .Where(source => source is not null)
+            .Cast<LegacyUpdateTimeSource>()
+            .Append(CreateLegacyUpdateTimeSource(_workspaceContext.RootPath))
+            .Where(source => source is not null)
+            .Cast<LegacyUpdateTimeSource>()
+            .ToArray();
+
+        _updateCheckService.MigrateLegacyUpdateTimeFiles(_updateTimePath, legacySources);
+    }
+
+    private static LegacyUpdateTimeSource? CreateLegacyUpdateTimeSource(string workspacePath)
+    {
+        try
+        {
+            var configResult = new ConfigService(workspacePath).Load();
+            return new LegacyUpdateTimeSource(
+                Path.Combine(workspacePath, "updateTime.json"),
+                configResult.Config.UpdateCheck.GlobalConfigPackagePath);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string BuildWindowTitle(WorkspaceContext workspaceContext)
@@ -307,10 +342,13 @@ public partial class MainWindow : Window
             if (_runtimeLayoutState.HasMainWindowBounds)
             {
                 RestoreMainWindowBoundsFromSession();
-                return;
+            }
+            else
+            {
+                ApplyDefaultMainWindowLayout();
             }
 
-            ApplyDefaultMainWindowLayout();
+            RestoreMainWindowPresentationState();
         }
         finally
         {
@@ -397,7 +435,7 @@ public partial class MainWindow : Window
         }
 
         _hasCleanedUpForClose = true;
-        SaveMainWindowBoundsToSession();
+        SaveMainWindowPresentationStateToSession();
         CloseFactoryMapForExit();
         SaveWindowLayoutImmediately();
         if (DataContext is MainViewModel viewModel)
@@ -427,7 +465,8 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         LogWindowInputDiagnostic("ClosingDecision", "action=Hide cancel=True");
-        SaveMainWindowBoundsToSession();
+        SaveMainWindowPresentationStateToSession();
+        SaveWindowLayoutImmediately();
         Hide();
         LogWindowInputDiagnostic("Hidden", "source=MainWindowClosing");
     }
@@ -441,7 +480,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        SaveMainWindowBoundsToSession();
+        SaveMainWindowPresentationStateToSession();
         WindowState = WindowState.Minimized;
     }
 
@@ -463,12 +502,14 @@ public partial class MainWindow : Window
     private void RestoreMainWindowForHotkey()
     {
         Show();
-        RestoreMainWindowBoundsFromSession();
 
         if (WindowState == WindowState.Minimized)
         {
             WindowState = WindowState.Normal;
         }
+
+        RestoreMainWindowBoundsFromSession();
+        RestoreMainWindowPresentationState();
     }
 
     private void ActivateMainWindow()
@@ -1025,8 +1066,14 @@ public partial class MainWindow : Window
         LogWindowInputDiagnostic("StateChanged");
         if (WindowState == WindowState.Minimized)
         {
-            SaveMainWindowBoundsToSession();
+            SaveMainWindowPresentationStateToSession();
         }
+    }
+
+    private void MainTitleBar_WorkspaceMaximizedChanged(object? sender, EventArgs e)
+    {
+        SaveMainWindowPresentationStateToSession();
+        SaveWindowLayoutImmediately();
     }
 
     private void MainWindow_Activated(object? sender, EventArgs e)
@@ -1122,6 +1169,27 @@ public partial class MainWindow : Window
         ScheduleWindowLayoutSave();
     }
 
+    private void SaveMainWindowPresentationStateToSession()
+    {
+        if (!_initialLayoutRestoreGuard.CanSaveWindowBounds || _isApplyingRuntimeLayout)
+        {
+            return;
+        }
+
+        _runtimeLayoutState.MainWindowState = ModernTitleBar.IsWorkspaceMaximized(this)
+            ? MainWindowStateKinds.WorkspaceMaximized
+            : MainWindowStateKinds.Normal;
+
+        if (_runtimeLayoutState.MainWindowState == MainWindowStateKinds.Normal
+            && WindowState == WindowState.Normal)
+        {
+            SaveMainWindowBoundsToSession();
+            return;
+        }
+
+        ScheduleWindowLayoutSave();
+    }
+
     private void RestoreMainWindowBoundsFromSession()
     {
         if (!_runtimeLayoutState.HasMainWindowBounds)
@@ -1135,6 +1203,25 @@ public partial class MainWindow : Window
             _runtimeLayoutState.MainWidth,
             _runtimeLayoutState.MainHeight);
         ApplyWindowBounds(this, ClampBoundsToWorkArea(bounds, MinWidth, MinHeight));
+    }
+
+    private void RestoreMainWindowPresentationState()
+    {
+        if (NormalizeMainWindowState(_runtimeLayoutState.MainWindowState)
+            != MainWindowStateKinds.WorkspaceMaximized)
+        {
+            return;
+        }
+
+        _isApplyingRuntimeLayout = true;
+        try
+        {
+            ModernTitleBar.ApplyWorkspaceMaximized(this);
+        }
+        finally
+        {
+            _isApplyingRuntimeLayout = false;
+        }
     }
 
     private void SaveFactoryMapStateToSession(bool includeViewState = true)
@@ -1259,6 +1346,7 @@ public partial class MainWindow : Window
                     Height = _runtimeLayoutState.MainHeight
                 }
                 : ToWindowBoundsConfig(CalculateDefaultMainWindowBounds()),
+            MainWindowState = _runtimeLayoutState.MainWindowState,
             FactoryMapWindow = _runtimeLayoutState.HasFactoryMapBounds
                 ? new WindowBoundsConfig
                 {
@@ -1297,6 +1385,8 @@ public partial class MainWindow : Window
             _runtimeLayoutState.MainWidth = bounds.Width;
             _runtimeLayoutState.MainHeight = bounds.Height;
         }
+
+        _runtimeLayoutState.MainWindowState = NormalizeMainWindowState(config.MainWindowState);
 
         if (config.FactoryMapWindow is not null)
         {
@@ -1342,6 +1432,13 @@ public partial class MainWindow : Window
             FactoryMapWindowStateKinds.WorkspaceMaximized => FactoryMapWindowStateKinds.WorkspaceMaximized,
             _ => FactoryMapWindowStateKinds.Normal
         };
+    }
+
+    internal static string NormalizeMainWindowState(string? state)
+    {
+        return string.Equals(state, MainWindowStateKinds.WorkspaceMaximized, StringComparison.Ordinal)
+            ? MainWindowStateKinds.WorkspaceMaximized
+            : MainWindowStateKinds.Normal;
     }
 
     private void RestoreShortcutGridColumnWidths()

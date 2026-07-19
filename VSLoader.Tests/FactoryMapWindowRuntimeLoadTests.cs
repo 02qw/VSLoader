@@ -452,68 +452,30 @@ public sealed class FactoryMapWindowRuntimeLoadTests
     }
 
     [Fact]
-    public void Map_toolbar_exposes_arrange_lines_command_between_export_and_download()
+    public void Map_toolbar_does_not_expose_full_map_arrangement_command()
     {
         var xaml = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
             "VSLoader",
             "Views",
             "FactoryMapWindow.xaml"));
 
-        var exportIndex = xaml.IndexOf("x:Name=\"ExportMapButton\"", StringComparison.Ordinal);
-        var arrangeIndex = xaml.IndexOf("x:Name=\"ArrangeLinesButton\"", StringComparison.Ordinal);
-        var downloadIndex = xaml.IndexOf("x:Name=\"DownloadAdminUiLinksButton\"", StringComparison.Ordinal);
-
-        Assert.True(exportIndex >= 0);
-        Assert.True(arrangeIndex > exportIndex);
-        Assert.True(downloadIndex > arrangeIndex);
-
-        var arrangeBlock = xaml[arrangeIndex..downloadIndex];
-        Assert.Contains("Style=\"{StaticResource ModernToolbarButtonStyle}\"", arrangeBlock);
-        Assert.Contains("Content=\"整理线路\"", arrangeBlock);
-        Assert.Contains("Click=\"ArrangeLinesButton_Click\"", arrangeBlock);
+        Assert.DoesNotContain("ArrangeLinesButton", xaml);
+        Assert.DoesNotContain("整理线路", xaml);
     }
 
     [Fact]
-    public void Arrange_lines_command_runs_on_clone_with_busy_guard_and_save_rollback()
+    public void Map_window_does_not_retain_full_map_arrangement_command_state()
     {
         var code = File.ReadAllText(TestProjectPaths.GetProjectFilePath(
             "VSLoader",
             "Views",
             "FactoryMapWindow.xaml.cs"));
 
-        Assert.Contains("private readonly FactoryMapLineArrangementService lineArrangementService = new();", code);
-        Assert.Contains("private CancellationTokenSource? arrangeLinesCancellationTokenSource;", code);
-        Assert.Contains("private long arrangeLinesOperationVersion;", code);
-        Assert.Contains("private bool isArrangingLines;", code);
-
-        var arrangeStart = code.IndexOf("private async void ArrangeLinesButton_Click", StringComparison.Ordinal);
-        var nextMethod = code.IndexOf("private void DownloadAdminUiLinksButton_Click", arrangeStart, StringComparison.Ordinal);
-        Assert.True(arrangeStart >= 0);
-        Assert.True(nextMethod > arrangeStart);
-
-        var arrangeBlock = code[arrangeStart..nextMethod];
-        Assert.Contains("CanArrangeLines()", arrangeBlock);
-        Assert.Contains("FlushPendingTopologySave()", arrangeBlock);
-        Assert.Contains("确定要整理当前地图的全部线路吗？", arrangeBlock);
-        Assert.Contains("CaptureTopologySnapshot(sourceMap)", arrangeBlock);
-        Assert.Contains("CloneMapForLineArrangement(sourceMap)", arrangeBlock);
-        Assert.Contains("BusyOverlayHost.Map", arrangeBlock);
-        Assert.Contains("正在整理地图线路...", arrangeBlock);
-        Assert.Contains("Task.Run", arrangeBlock);
-        Assert.Contains("lineArrangementService.ArrangeAll", arrangeBlock);
-        Assert.Contains("operationVersion != arrangeLinesOperationVersion", arrangeBlock);
-        Assert.Contains("ReferenceEquals(currentMap, sourceMap)", arrangeBlock);
-        Assert.Contains("saveLayout(currentMap)", arrangeBlock);
-        Assert.Contains("RestoreTopologySnapshot(currentMap, snapshot)", arrangeBlock);
-
-        Assert.Contains("private bool CanArrangeLines()", code);
-        Assert.Contains("interactionState.Mode == FactoryMapMode.Edit", code);
-        Assert.Contains("interactionState.Kind == FactoryMapInteractionKind.Idle", code);
-        Assert.Contains("!HasTopologyConnectionDraft", code);
-        Assert.Contains("!isArrangingLines", code);
-        Assert.Contains("!IsMapBusy", code);
-        Assert.Contains("ArrangeLinesButton.IsEnabled = CanArrangeLines();", code);
-        Assert.Contains("arrangeLinesCancellationTokenSource?.Cancel();", code);
+        Assert.DoesNotContain("ArrangeLinesButton_Click", code);
+        Assert.DoesNotContain("ArrangeAll", code);
+        Assert.DoesNotContain("arrangeLinesCancellationTokenSource", code);
+        Assert.DoesNotContain("arrangeLinesOperationVersion", code);
+        Assert.DoesNotContain("isArrangingLines", code);
     }
 
     [Fact]

@@ -8,6 +8,8 @@ public sealed class UpdateCheckResult
 
     public DateTimeOffset? DetectedGlobalConfigExportedAt { get; set; }
 
+    public string DetectedGlobalConfigPath { get; set; } = string.Empty;
+
     public DateTime? DetectedGlobalConfigWriteTimeUtc { get; set; }
 
     public DateTime? DetectedRulesWriteTimeUtc { get; set; }

@@ -656,6 +656,57 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
         Assert.Equal("旧", ReadJson<AppConfig>(currentConfigPath).Shortcuts.Single().Name);
     }
 
+    [Fact]
+    public void Import_preflights_map_before_replacing_current_workspace_files()
+    {
+        var currentConfigPath = Path.Combine(_workspacePath, "config.json");
+        var currentLayoutPath = Path.Combine(_workspacePath, "factory-map.layout.json");
+        WriteJson(currentConfigPath, new AppConfig
+        {
+            Shortcuts = [new ShortcutItem { Name = "旧", TargetPath = "OLD" }]
+        });
+        WriteJson(currentLayoutPath, new FactoryMapLayoutConfig
+        {
+            Version = 6,
+            Devices = [new FactoryMapDeviceNode { Id = "old-node", Key = "OLD", Name = "旧", X = 100, Y = 100, Width = 160, Height = 60 }]
+        });
+        WritePackage(new GlobalConfigPackage
+        {
+            WorkspaceConfig = new AppConfig
+            {
+                Shortcuts = [new ShortcutItem { Name = "新", TargetPath = "A" }]
+            },
+            FactoryMapLayout = new FactoryMapLayoutConfig
+            {
+                Version = 6,
+                Devices = [new FactoryMapDeviceNode { Id = "node-a", Key = "A", Name = "新", X = 100, Y = 100, Width = 160, Height = 60 }],
+                ConnectionPoints =
+                [
+                    new FactoryMapConnectionPoint
+                    {
+                        Id = "node-a:right",
+                        Kind = FactoryMapConnectionPointKinds.Free,
+                        X = 400,
+                        Y = 130
+                    }
+                ]
+            }
+        });
+
+        var result = _service.Import(
+            _packagePath,
+            currentConfigPath,
+            currentLayoutPath,
+            new AppSettings(),
+            _ => null);
+
+        Assert.False(result.Success);
+        Assert.Contains("地图布局预检失败", result.ErrorMessage);
+        Assert.Equal("旧", ReadJson<AppConfig>(currentConfigPath).Shortcuts.Single().Name);
+        Assert.Equal("OLD", ReadJson<FactoryMapLayoutConfig>(currentLayoutPath).Devices.Single().Key);
+        Assert.Empty(Directory.EnumerateFiles(_workspacePath, "*.import-backup.*.json"));
+    }
+
     private void WritePackage(GlobalConfigPackage package)
     {
         WriteJson(_packagePath, package);

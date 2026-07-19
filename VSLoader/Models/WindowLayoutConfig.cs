@@ -4,6 +4,8 @@ public sealed class WindowLayoutConfig
 {
     public WindowBoundsConfig? MainWindow { get; set; }
 
+    public string MainWindowState { get; set; } = MainWindowStateKinds.Normal;
+
     public WindowBoundsConfig? FactoryMapWindow { get; set; }
 
     public bool WasFactoryMapOpen { get; set; }

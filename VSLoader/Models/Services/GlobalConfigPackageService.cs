@@ -15,6 +15,7 @@ public sealed class GlobalConfigPackageService
         PropertyNameCaseInsensitive = true,
         WriteIndented = true
     };
+    private readonly FactoryMapLayoutService factoryMapLayoutService = new();
 
     public GlobalConfigExportResult Export(
         string packagePath,
@@ -111,6 +112,26 @@ public sealed class GlobalConfigPackageService
         }
         AddPreflightWarnings(resolved.WorkspaceConfig, result);
 
+        if (resolved.FactoryMapLayout is not null)
+        {
+            ReportProgress(progress, 40, "正在预检地图布局...", "factory-map.layout.json");
+            var mapPreflight = PreflightFactoryMapLayout(
+                resolved.FactoryMapLayout,
+                resolved.WorkspaceConfig.Shortcuts);
+            if (!mapPreflight.Success)
+            {
+                return GlobalConfigImportResult.Fail(
+                    $"地图布局预检失败，当前工作区未被修改：{mapPreflight.ErrorMessage}");
+            }
+
+            result.Warnings.AddRange(mapPreflight.Map.LoadWarnings.Select(warning =>
+                $"地图布局将以兼容模式导入：{warning}"));
+            if (mapPreflight.Map.InvalidSegmentCount > 0)
+            {
+                result.Warnings.Add($"地图布局包含 {mapPreflight.Map.InvalidSegmentCount} 条无效线段，已在预检中跳过。");
+            }
+        }
+
         try
         {
             ReportProgress(progress, 50, "正在写入工作区配置...", "config.json");
@@ -154,6 +175,41 @@ public sealed class GlobalConfigPackageService
         ReportProgress(progress, 88, "正在校验本机路径...", "VSCode 和软件更新 manifest");
         ApplyProgramSettings(resolved.MachineSettings, appSettings, result, resolveVSCodePath);
         return result;
+    }
+
+    private FactoryMapLayoutLoadResult PreflightFactoryMapLayout(
+        FactoryMapLayoutConfig layout,
+        IReadOnlyList<ShortcutItem> shortcuts)
+    {
+        var previewDirectory = Path.Combine(Path.GetTempPath(), "VSLoader", "global-config-preflight");
+        var previewPath = Path.Combine(previewDirectory, $"factory-map.{Guid.NewGuid():N}.json");
+        try
+        {
+            Directory.CreateDirectory(previewDirectory);
+            WriteJson(previewPath, layout);
+            return factoryMapLayoutService.LoadFromFile(previewPath, shortcuts);
+        }
+        catch (Exception ex)
+        {
+            return new FactoryMapLayoutLoadResult(
+                new FactoryMapDeviceViewData(),
+                false,
+                $"地图布局临时预检失败：{ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(previewPath))
+                {
+                    File.Delete(previewPath);
+                }
+            }
+            catch
+            {
+                // 临时预检文件清理失败不能改变导入判定。
+            }
+        }
     }
 
     public static string BuildDefaultExportFileName(DateTime now)

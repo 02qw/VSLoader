@@ -83,31 +83,11 @@ public sealed class FactoryMapLayoutService
             }
 
             EnsureDeviceIds(map.Devices);
-            var geometryChanged = FactoryMapNodeGeometryService.NormalizeDevices(map.Devices);
-
-            if (map.TopologyAuthoritative)
+            if (!map.TopologyAuthoritative || map.Segments.Count == 0)
             {
-                var attachedBefore = map.ConnectionPoints
-                    .Where(point => point.Kind == FactoryMapConnectionPointKinds.Attached)
-                    .ToDictionary(point => point.Id, point => (point.X, point.Y), StringComparer.OrdinalIgnoreCase);
-                FactoryMapNodeGeometryService.SynchronizeAttachedPoints(map);
-                geometryChanged |= map.ConnectionPoints
-                    .Where(point => point.Kind == FactoryMapConnectionPointKinds.Attached)
-                    .Any(point => !attachedBefore.TryGetValue(point.Id, out var before)
-                        || before != (point.X, point.Y));
-                if (geometryChanged && map.Segments.Count > 0)
-                {
-                    var arrangement = new FactoryMapLineArrangementService().ArrangeAll(
-                        map,
-                        FactoryMapNodeGeometryService.GridSize);
-                    if (!arrangement.Success)
-                    {
-                        return new FactoryMapLayoutSaveResult(
-                            false,
-                            $"节点几何变化后线路整理失败：{arrangement.ErrorMessage}");
-                    }
-                }
+                _ = FactoryMapNodeGeometryService.NormalizeDevices(map.Devices);
             }
+
             var topology = !map.TopologyAuthoritative && (map.Edges.Count > 0 || map.Connectors.Count > 0)
                 ? FactoryMapLayoutTopologyConverter.BuildFromLegacy(map.Devices, map.Connectors, map.Edges)
                 : new FactoryMapLayoutTopologyConverter.ConversionResult(
@@ -241,11 +221,6 @@ public sealed class FactoryMapLayoutService
             devices.Add(newDevice);
         }
 
-        if (config.Version >= 6)
-        {
-            geometryChanged |= FactoryMapNodeGeometryService.NormalizeDevices(devices);
-        }
-
         var devicesByKey = devices.ToDictionary(device => NormalizeKey(device.Key), StringComparer.OrdinalIgnoreCase);
         var connectors = (config.Connectors ?? [])
             .Where(connector => !string.IsNullOrWhiteSpace(connector.Id)
@@ -313,7 +288,7 @@ public sealed class FactoryMapLayoutService
             edges = projection.Edges;
         }
 
-        var map = new FactoryMapDeviceViewData
+        var authoredMap = new FactoryMapDeviceViewData
         {
             TopologyAuthoritative = true,
             Canvas = config.Canvas ?? new FactoryMapCanvas { Width = 1600, Height = 900 },
@@ -324,30 +299,63 @@ public sealed class FactoryMapLayoutService
             Edges = edges,
             InvalidEdgeCount = invalidEdgeCount + topology.InvalidSegmentCount,
             InvalidSegmentCount = topology.InvalidSegmentCount,
-            RequiresPersistence = geometryChanged || config.Version < CurrentLayoutVersion
+            RequiresPersistence = false
         };
 
-        if (config.Version < 6)
+        var migrationCandidate = CloneMap(authoredMap);
+        geometryChanged = FactoryMapNodeGeometryService.NormalizeDevices(migrationCandidate.Devices);
+        if (!geometryChanged)
         {
-            geometryChanged |= FactoryMapNodeGeometryService.NormalizeDevices(map.Devices);
+            return authoredMap;
         }
 
-        if (geometryChanged)
+        if (authoredMap.Segments.Count > 0)
         {
-            FactoryMapNodeGeometryService.SynchronizeAttachedPoints(map);
-            if (map.Segments.Count > 0)
+            authoredMap.LoadWarnings.Add(
+                "检测到节点几何需要规范化；为避免改写原作者线路，已保留原始布局。");
+            return authoredMap;
+        }
+
+        FactoryMapNodeGeometryService.SynchronizeAttachedPoints(migrationCandidate);
+        migrationCandidate.RequiresPersistence = true;
+        return migrationCandidate;
+    }
+
+    private static FactoryMapDeviceViewData CloneMap(FactoryMapDeviceViewData map)
+    {
+        return new FactoryMapDeviceViewData
+        {
+            TopologyAuthoritative = map.TopologyAuthoritative,
+            Canvas = new FactoryMapCanvas
             {
-                var arrangement = new FactoryMapLineArrangementService().ArrangeAll(map, FactoryMapNodeGeometryService.GridSize);
-                if (!arrangement.Success)
-                {
-                    throw new InvalidDataException($"节点尺寸迁移后线路整理失败：{arrangement.ErrorMessage}");
-                }
-            }
-
-            map.RequiresPersistence = true;
-        }
-
-        return map;
+                Width = map.Canvas.Width,
+                Height = map.Canvas.Height
+            },
+            Devices = map.Devices.Select(device => new FactoryMapDeviceViewNode
+            {
+                Id = device.Id,
+                Key = device.Key,
+                Name = device.Name,
+                X = device.X,
+                Y = device.Y,
+                Width = device.Width,
+                Height = device.Height,
+                Shortcut = device.Shortcut
+            }).ToList(),
+            ConnectionPoints = map.ConnectionPoints.Select(CloneConnectionPoint).ToList(),
+            Segments = map.Segments.Select(CloneSegment).ToList(),
+            Connectors = map.Connectors.Select(connector => new FactoryMapConnectorViewNode
+            {
+                Id = connector.Id,
+                X = connector.X,
+                Y = connector.Y
+            }).ToList(),
+            Edges = map.Edges.ToList(),
+            InvalidEdgeCount = map.InvalidEdgeCount,
+            InvalidSegmentCount = map.InvalidSegmentCount,
+            RequiresPersistence = map.RequiresPersistence,
+            LoadWarnings = map.LoadWarnings.ToList()
+        };
     }
 
     private static (double X, double Y) GetDefaultPosition(int index)

@@ -19,6 +19,7 @@ public sealed class WindowLayoutServiceTests : IDisposable
         var service = new WindowLayoutService(_rootPath);
         var config = new WindowLayoutConfig
         {
+            MainWindowState = MainWindowStateKinds.WorkspaceMaximized,
             FactoryMapWindowState = FactoryMapWindowStateKinds.WorkspaceMaximized,
             ShortcutGridColumns = new ShortcutGridColumnLayoutConfig
             {
@@ -34,6 +35,7 @@ public sealed class WindowLayoutServiceTests : IDisposable
 
         Assert.True(saveResult.Success, saveResult.ErrorMessage);
         Assert.Null(warning);
+        Assert.Equal(MainWindowStateKinds.WorkspaceMaximized, loaded.MainWindowState);
         Assert.Equal(FactoryMapWindowStateKinds.WorkspaceMaximized, loaded.FactoryMapWindowState);
         Assert.Equal(240, loaded.ShortcutGridColumns?.Name);
         Assert.Equal(320, loaded.ShortcutGridColumns?.Description);
@@ -56,6 +58,7 @@ public sealed class WindowLayoutServiceTests : IDisposable
 
         Assert.Null(warning);
         Assert.Null(loaded.ShortcutGridColumns);
+        Assert.Equal(MainWindowStateKinds.Normal, loaded.MainWindowState);
         Assert.Equal(FactoryMapWindowStateKinds.Normal, loaded.FactoryMapWindowState);
     }
 

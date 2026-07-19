@@ -64,7 +64,6 @@ public partial class FactoryMapWindow : Window
     private readonly FactoryMapTopologyService topologyService = new();
     private readonly FactoryMapConnectionDraftService connectionDraftService = new();
     private readonly FactoryMapMovementService movementService = new();
-    private readonly FactoryMapLineArrangementService lineArrangementService = new();
     private readonly FactoryMapRenderIndexService renderIndexService = new();
     private readonly FactoryMapMarqueeSelectionService marqueeSelectionService = new();
     private readonly FactoryMapSelectionState topologySelection = new();
@@ -149,11 +148,7 @@ public partial class FactoryMapWindow : Window
     private double activeDeviceStartY;
     private TopologySnapshot? pendingTopologySaveSnapshot;
     private string pendingTopologySaveErrorMessage = "地图对象移动后保存失败。";
-    private CancellationTokenSource? arrangeLinesCancellationTokenSource;
-    private long arrangeLinesOperationVersion;
     private long mapFocusRestoreGeneration;
-    private bool isArrangingLines;
-    private bool isWindowClosed;
 
     private sealed record EdgeContextMenuPayload(
         FactoryMapDeviceEdgeViewData Edge,
@@ -225,13 +220,10 @@ public partial class FactoryMapWindow : Window
         Deactivated += FactoryMapWindow_Deactivated;
         Closed += (_, _) =>
         {
-            isWindowClosed = true;
-            CancelArrangeLinesOperation();
             UninstallLowLevelMouseHook();
         };
         Closing += (_, e) =>
         {
-            CancelArrangeLinesOperation();
             if (!FlushPendingTopologySave())
             {
                 e.Cancel = true;
@@ -279,11 +271,6 @@ public partial class FactoryMapWindow : Window
 
     public void RenderMap(FactoryMapDeviceViewData map, bool resetView)
     {
-        if (isArrangingLines)
-        {
-            CancelArrangeLinesOperation();
-        }
-
         CompleteActivePointerInteraction();
         if (!FlushPendingTopologySave())
         {
@@ -301,7 +288,6 @@ public partial class FactoryMapWindow : Window
         }
 
         RenderCurrentMap(resetView);
-        RefreshArrangeLinesButtonState();
     }
 
     private static void EnsureTopologyRuntime(FactoryMapDeviceViewData map)
@@ -534,6 +520,11 @@ public partial class FactoryMapWindow : Window
         if (currentMap.InvalidSegmentCount > 0)
         {
             statusParts.Add($"无效线段：{currentMap.InvalidSegmentCount}");
+        }
+
+        if (currentMap.LoadWarnings.Count > 0)
+        {
+            statusParts.Add($"兼容警告：{currentMap.LoadWarnings.Count}");
         }
 
         SetStatusText(string.Join("  |  ", statusParts));
@@ -3137,7 +3128,7 @@ public partial class FactoryMapWindow : Window
 
     private bool SetMapMode(FactoryMapMode mode)
     {
-        if (IsMapBusy || isArrangingLines)
+        if (IsMapBusy)
         {
             return false;
         }
@@ -3209,7 +3200,7 @@ public partial class FactoryMapWindow : Window
 
     private void ImportMapButton_Click(object sender, RoutedEventArgs e)
     {
-        if (IsMapBusy || isArrangingLines)
+        if (IsMapBusy)
         {
             return;
         }
@@ -3291,251 +3282,7 @@ public partial class FactoryMapWindow : Window
         SetStatusText("图文件已导出。");
     }
 
-    private async void ArrangeLinesButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (!CanArrangeLines())
-        {
-            if (!isEditMode)
-            {
-                dialogService.ShowError("请先切换到编辑模式后再整理线路。");
-            }
-
-            return;
-        }
-
-        if (!FlushPendingTopologySave())
-        {
-            return;
-        }
-
-        if (!dialogService.Confirm("确定要整理当前地图的全部线路吗？\n整理会重新计算折点，但不会移动节点或独立连接点。"))
-        {
-            return;
-        }
-
-        var sourceMap = currentMap;
-        if (sourceMap is null)
-        {
-            return;
-        }
-
-        var snapshot = CaptureTopologySnapshot(sourceMap);
-        var candidateMap = CloneMapForLineArrangement(sourceMap);
-        var operationVersion = ++arrangeLinesOperationVersion;
-        var cancellationTokenSource = new CancellationTokenSource();
-        arrangeLinesCancellationTokenSource = cancellationTokenSource;
-        isArrangingLines = true;
-        SetArrangeLinesBusyState();
-        RefreshArrangeLinesButtonState();
-
-        try
-        {
-            var result = await Task.Run(() =>
-            {
-                cancellationTokenSource.Token.ThrowIfCancellationRequested();
-                var arrangementResult = lineArrangementService.ArrangeAll(candidateMap, SnapGridSize);
-                cancellationTokenSource.Token.ThrowIfCancellationRequested();
-                return arrangementResult;
-            }, cancellationTokenSource.Token);
-
-            if (isWindowClosed
-                || cancellationTokenSource.IsCancellationRequested
-                || operationVersion != arrangeLinesOperationVersion
-                || !ReferenceEquals(currentMap, sourceMap))
-            {
-                return;
-            }
-
-            if (!result.Success)
-            {
-                dialogService.ShowError(result.ErrorMessage ?? "线路整理失败。");
-                return;
-            }
-
-            if (result.ArrangedRouteCount <= 0)
-            {
-                dialogService.ShowInfo("当前地图没有需要整理的线路。");
-                return;
-            }
-
-            currentMap.ConnectionPoints = candidateMap.ConnectionPoints;
-            currentMap.Segments = candidateMap.Segments;
-
-            bool saved;
-            try
-            {
-                saved = saveLayout(currentMap);
-            }
-            catch (Exception ex)
-            {
-                RestoreTopologySnapshot(currentMap, snapshot);
-                RenderCurrentMap(resetView: false);
-                dialogService.ShowError($"地图文件保存失败，已恢复整理前的线路。\n{ex.Message}");
-                return;
-            }
-
-            if (!saved)
-            {
-                RestoreTopologySnapshot(currentMap, snapshot);
-                RenderCurrentMap(resetView: false);
-                dialogService.ShowError("地图文件保存失败，已恢复整理前的线路。");
-                return;
-            }
-
-            topologySelection.ReplaceWith(topologySelection.SelectedObjects
-                .Where(item => item.Kind == FactoryMapObjectKind.Device));
-            ClearEdgeSelection();
-            RenderCurrentMap(resetView: false);
-            SetStatusText($"已整理 {result.ArrangedRouteCount} 条线路。");
-            dialogService.ShowInfo(
-                $"已整理 {result.ArrangedRouteCount} 条线路，移除 {result.RemovedBendCount} 个旧折点，创建 {result.CreatedBendCount} 个新折点。");
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            if (!isWindowClosed
-                && operationVersion == arrangeLinesOperationVersion
-                && ReferenceEquals(currentMap, sourceMap))
-            {
-                dialogService.ShowError($"线路整理失败。\n{ex.Message}");
-            }
-        }
-        finally
-        {
-            cancellationTokenSource.Dispose();
-            if (operationVersion == arrangeLinesOperationVersion)
-            {
-                arrangeLinesCancellationTokenSource = null;
-                isArrangingLines = false;
-                ClearArrangeLinesBusyState();
-                RefreshArrangeLinesButtonState();
-            }
-        }
-    }
-
-    private bool CanArrangeLines()
-    {
-        return currentMap is not null
-            && interactionState.Mode == FactoryMapMode.Edit
-            && interactionState.Kind == FactoryMapInteractionKind.Idle
-            && !HasTopologyConnectionDraft
-            && !HasActiveMapPointerInteraction
-            && !isArrangingLines
-            && !IsMapBusy;
-    }
-
-    private bool HasActiveMapPointerInteraction =>
-        isDraggingMap
-        || isDraggingDevice
-        || isDraggingConnector
-        || isDraggingEdgePoint
-        || isDraggingEdgeSegment
-        || isDraggingSelection
-        || isDraggingTopologyPoint
-        || isDraggingTopologySegment
-        || isMarqueeSelecting
-        || isSelectionPointerDown;
-
     private bool IsMapBusy => DataContext is MainViewModel { IsBusy: true };
-
-    private void RefreshArrangeLinesButtonState()
-    {
-        ArrangeLinesButton.IsEnabled = CanArrangeLines();
-    }
-
-    private void SetArrangeLinesBusyState()
-    {
-        if (DataContext is not MainViewModel viewModel)
-        {
-            return;
-        }
-
-        viewModel.BusyOverlayHost = BusyOverlayHost.Map;
-        viewModel.BusyMessage = "正在整理地图线路...";
-        viewModel.BusyProgressValue = 0;
-        viewModel.BusyProgressMaximum = 0;
-        viewModel.BusyProgressText = "正在计算端口方向和正交路径...";
-        viewModel.BusyCurrentItemText = string.Empty;
-        viewModel.IsBusy = true;
-    }
-
-    private void ClearArrangeLinesBusyState()
-    {
-        if (DataContext is not MainViewModel viewModel)
-        {
-            return;
-        }
-
-        viewModel.IsBusy = false;
-        viewModel.BusyMessage = string.Empty;
-        viewModel.BusyProgressValue = 0;
-        viewModel.BusyProgressMaximum = 0;
-        viewModel.BusyProgressText = string.Empty;
-        viewModel.BusyCurrentItemText = string.Empty;
-        viewModel.BusyOverlayHost = BusyOverlayHost.Main;
-    }
-
-    private void CancelArrangeLinesOperation()
-    {
-        if (!isArrangingLines && arrangeLinesCancellationTokenSource is null)
-        {
-            return;
-        }
-
-        arrangeLinesOperationVersion++;
-        arrangeLinesCancellationTokenSource?.Cancel();
-        arrangeLinesCancellationTokenSource = null;
-        isArrangingLines = false;
-        ClearArrangeLinesBusyState();
-        if (!isWindowClosed)
-        {
-            RefreshArrangeLinesButtonState();
-        }
-    }
-
-    private static FactoryMapDeviceViewData CloneMapForLineArrangement(FactoryMapDeviceViewData map)
-    {
-        return new FactoryMapDeviceViewData
-        {
-            TopologyAuthoritative = map.TopologyAuthoritative,
-            Canvas = new FactoryMapCanvas
-            {
-                Width = map.Canvas.Width,
-                Height = map.Canvas.Height
-            },
-            Devices = map.Devices.Select(device => new FactoryMapDeviceViewNode
-            {
-                Id = device.Id,
-                Key = device.Key,
-                Name = device.Name,
-                X = device.X,
-                Y = device.Y,
-                Width = device.Width,
-                Height = device.Height,
-                Shortcut = device.Shortcut
-            }).ToList(),
-            ConnectionPoints = map.ConnectionPoints.Select(point => new FactoryMapConnectionPoint
-            {
-                Id = point.Id,
-                Kind = point.Kind,
-                OwnerNodeId = point.OwnerNodeId,
-                Side = point.Side,
-                JunctionAxis = point.JunctionAxis,
-                X = point.X,
-                Y = point.Y
-            }).ToList(),
-            Segments = map.Segments.Select(segment => new FactoryMapSegment
-            {
-                Id = segment.Id,
-                FromPointId = segment.FromPointId,
-                ToPointId = segment.ToPointId,
-                ZIndex = segment.ZIndex
-            }).ToList()
-        };
-    }
-
     private void DownloadAdminUiLinksButton_Click(object sender, RoutedEventArgs e)
     {
         downloadAdminUiLinks();
@@ -3543,7 +3290,7 @@ public partial class FactoryMapWindow : Window
 
     private void FactoryMapWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
-        if (!isEditMode || currentMap is null || IsMapBusy || isArrangingLines)
+        if (!isEditMode || currentMap is null || IsMapBusy)
         {
             return;
         }
@@ -4080,7 +3827,6 @@ public partial class FactoryMapWindow : Window
 
     private void MapViewport_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(RefreshArrangeLinesButtonState));
         if (e.ChangedButton != MouseButton.Middle || !IsMapReady())
         {
             return;
@@ -4092,7 +3838,6 @@ public partial class FactoryMapWindow : Window
 
     private void MapViewport_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(RefreshArrangeLinesButtonState));
         if (e.ChangedButton != MouseButton.Middle || !isDraggingMap || !isMiddleButtonPanning)
         {
             return;
@@ -5407,7 +5152,6 @@ public partial class FactoryMapWindow : Window
 
     private void RefreshMapModeStatus()
     {
-        RefreshArrangeLinesButtonState();
         if (HasTopologyConnectionDraft)
         {
             var statusText = interactionState.ConnectionDraft?.OriginKind == FactoryMapConnectionOriginKinds.Segment

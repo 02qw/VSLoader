@@ -84,17 +84,6 @@
                             FontFamily="Microsoft YaHei UI"
                             FontSize="12"
                             ToolTip="导出当前地图 JSON 文件" />
-                    <Button x:Name="ArrangeLinesButton"
-                            Style="{StaticResource ModernToolbarButtonStyle}"
-                            DockPanel.Dock="Left"
-                            MinWidth="92"
-                            Height="28"
-                            Margin="8,0,0,0"
-                            Click="ArrangeLinesButton_Click"
-                            Content="整理线路"
-                            FontFamily="Microsoft YaHei UI"
-                            FontSize="12"
-                            ToolTip="重新整理当前地图中的全部线路" />
                     <Button x:Name="DownloadAdminUiLinksButton"
                             Style="{StaticResource ModernToolbarButtonStyle}"
                             DockPanel.Dock="Left"

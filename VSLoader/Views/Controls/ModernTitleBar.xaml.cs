@@ -42,7 +42,13 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
             typeof(ModernTitleBar),
             new PropertyMetadata(false));
 
-    private Rect? normalWindowBounds;
+    private static readonly DependencyProperty NormalWindowBoundsProperty =
+        DependencyProperty.RegisterAttached(
+            "NormalWindowBounds",
+            typeof(Rect?),
+            typeof(ModernTitleBar),
+            new PropertyMetadata(null));
+
     private bool isApplyingWorkspaceBounds;
     private Window? subscribedOwnerWindow;
     private HwndSource? subscribedHwndSource;
@@ -51,6 +57,8 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
     private string? lastNativeHitLogKey;
 
     public event EventHandler? CloseRequested;
+
+    public event EventHandler? WorkspaceMaximizedChanged;
 
     public ModernTitleBar()
     {
@@ -93,6 +101,11 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
             window.WindowState = WindowState.Normal;
         }
 
+        if (!IsWorkspaceMaximized(window) && GetNormalWindowBounds(window) is null)
+        {
+            SetNormalWindowBounds(window, CaptureNormalBounds(window));
+        }
+
         var workArea = ConvertScreenBoundsToDip(window, GetCurrentScreenWorkingArea(window));
         SetIsWorkspaceMaximized(window, true);
         if (window.WindowState == WindowState.Maximized)
@@ -109,6 +122,16 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
     private static void SetIsWorkspaceMaximized(Window window, bool value)
     {
         window.SetValue(IsWorkspaceMaximizedProperty, value);
+    }
+
+    private static Rect? GetNormalWindowBounds(Window window)
+    {
+        return window.GetValue(NormalWindowBoundsProperty) is Rect bounds ? bounds : null;
+    }
+
+    private static void SetNormalWindowBounds(Window window, Rect bounds)
+    {
+        window.SetValue(NormalWindowBoundsProperty, bounds);
     }
 
     private void ModernTitleBar_Loaded(object sender, RoutedEventArgs e)
@@ -315,6 +338,7 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
         }
 
         UpdateMaximizeRestoreIcon();
+        WorkspaceMaximizedChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -433,7 +457,7 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
             window.WindowState = WindowState.Normal;
         }
 
-        normalWindowBounds = CaptureNormalBounds(window);
+        SetNormalWindowBounds(window, CaptureNormalBounds(window));
         var workArea = ConvertScreenBoundsToDip(window, GetCurrentScreenWorkingArea(window));
 
         isApplyingWorkspaceBounds = true;
@@ -460,7 +484,7 @@ public partial class ModernTitleBar : System.Windows.Controls.UserControl
         }
 
         var workArea = ConvertScreenBoundsToDip(window, GetCurrentScreenWorkingArea(window));
-        var restoreBounds = normalWindowBounds ?? window.RestoreBounds;
+        var restoreBounds = GetNormalWindowBounds(window) ?? window.RestoreBounds;
         var normalizedBounds = ModernTitleBarWorkspaceBoundsService.NormalizeRestoreBounds(
             restoreBounds,
             workArea,

@@ -2,6 +2,9 @@ namespace VSLoader.Models;
 
 public sealed class UpdateTimeState
 {
+    public Dictionary<string, UpdateGlobalConfigState> GlobalConfigs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    // Retained for compatibility with pre-path-scoped updateTime.json files.
     public UpdateGlobalConfigState GlobalConfig { get; set; } = new();
 
     public UpdateFileState Rules { get; set; } = new();
@@ -10,6 +13,10 @@ public sealed class UpdateTimeState
 
     public UpdateSoftwareState Software { get; set; } = new();
 }
+
+public sealed record LegacyUpdateTimeSource(
+    string UpdateTimePath,
+    string GlobalConfigPackagePath);
 
 public sealed class UpdateFileState
 {

@@ -8,25 +8,17 @@ public sealed class FactoryMapLineArrangementService
     private readonly FactoryMapOrthogonalRouterService routerService = new();
     private readonly FactoryMapTopologyService topologyService = new();
 
-    public FactoryMapLineArrangementResult ArrangeAll(FactoryMapDeviceViewData map, double gridSize)
-    {
-        return Arrange(map, null, gridSize);
-    }
-
     public FactoryMapLineArrangementResult ArrangeConnectedTo(
         FactoryMapDeviceViewData map,
         IReadOnlyCollection<string> anchorPointIds,
         double gridSize)
     {
         var filter = anchorPointIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return Arrange(map, filter, gridSize);
-    }
+        if (filter.Count == 0)
+        {
+            return FactoryMapLineArrangementResult.Succeeded();
+        }
 
-    private FactoryMapLineArrangementResult Arrange(
-        FactoryMapDeviceViewData map,
-        HashSet<string>? anchorFilter,
-        double gridSize)
-    {
         if (!double.IsFinite(gridSize) || gridSize <= 0)
         {
             return FactoryMapLineArrangementResult.Failed("线路整理网格参数无效。");
@@ -34,7 +26,7 @@ public sealed class FactoryMapLineArrangementService
 
         if (map.Segments.Count == 0)
         {
-            return FactoryMapLineArrangementResult.Succeeded(0, 0, 0);
+            return FactoryMapLineArrangementResult.Succeeded();
         }
 
         var candidate = CloneMap(map);
@@ -45,17 +37,14 @@ public sealed class FactoryMapLineArrangementService
         }
 
         var routes = enumeration.Routes
-            .Where(route => anchorFilter is null
-                || anchorFilter.Contains(route.StartPointId)
-                || anchorFilter.Contains(route.EndPointId))
+            .Where(route => filter.Contains(route.StartPointId)
+                || filter.Contains(route.EndPointId))
             .ToArray();
         if (routes.Length == 0)
         {
-            return FactoryMapLineArrangementResult.Succeeded(0, 0, 0);
+            return FactoryMapLineArrangementResult.Succeeded();
         }
 
-        var removedBendCount = 0;
-        var createdBendCount = 0;
         var pointIds = candidate.ConnectionPoints.Select(point => point.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         for (var routeIndex = 0; routeIndex < routes.Length; routeIndex++)
         {
@@ -77,7 +66,7 @@ public sealed class FactoryMapLineArrangementService
             }
 
             candidate.Segments.RemoveAll(segment => route.SegmentIds.Contains(segment.Id, StringComparer.OrdinalIgnoreCase));
-            removedBendCount += candidate.ConnectionPoints.RemoveAll(point =>
+            candidate.ConnectionPoints.RemoveAll(point =>
                 route.BendPointIds.Contains(point.Id, StringComparer.OrdinalIgnoreCase));
             foreach (var removedId in route.BendPointIds)
             {
@@ -97,7 +86,6 @@ public sealed class FactoryMapLineArrangementService
                     Y = routePoint.Y
                 });
                 pathIds.Add(bendId);
-                createdBendCount++;
             }
 
             pathIds.Add(to.Id);
@@ -122,7 +110,7 @@ public sealed class FactoryMapLineArrangementService
 
         map.ConnectionPoints = candidate.ConnectionPoints;
         map.Segments = candidate.Segments;
-        return FactoryMapLineArrangementResult.Succeeded(routes.Length, removedBendCount, createdBendCount);
+        return FactoryMapLineArrangementResult.Succeeded();
     }
 
     private static FactoryMapDeviceViewData CloneMap(FactoryMapDeviceViewData map)

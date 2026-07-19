@@ -21,4 +21,6 @@ public sealed class FactoryMapDeviceViewData
     public int InvalidSegmentCount { get; set; }
 
     public bool RequiresPersistence { get; set; }
+
+    public List<string> LoadWarnings { get; set; } = [];
 }

@@ -12,6 +12,8 @@ public sealed class RuntimeLayoutState
 
     public double MainHeight { get; set; }
 
+    public string MainWindowState { get; set; } = MainWindowStateKinds.Normal;
+
     public bool WasFactoryMapOpen { get; set; }
 
     public string FactoryMapWindowState { get; set; } = FactoryMapWindowStateKinds.Normal;

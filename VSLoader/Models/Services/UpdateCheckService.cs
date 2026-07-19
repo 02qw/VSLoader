@@ -23,6 +23,51 @@ public sealed class UpdateCheckService
         this.pathAccessPreflightService = pathAccessPreflightService;
     }
 
+    public SaveResult MigrateLegacyUpdateTimeFiles(
+        string globalUpdateTimePath,
+        IEnumerable<LegacyUpdateTimeSource> legacySources)
+    {
+        if (string.IsNullOrWhiteSpace(globalUpdateTimePath))
+        {
+            return SaveResult.Fail("程序级更新基线路径为空。");
+        }
+
+        var globalLoadResult = LoadState(globalUpdateTimePath);
+        if (!globalLoadResult.Success)
+        {
+            return SaveResult.Fail(globalLoadResult.ErrorMessage ?? "程序级 updateTime.json 读取失败");
+        }
+
+        var mergedState = globalLoadResult.State;
+        var changed = false;
+        var globalPath = NormalizePath(globalUpdateTimePath);
+        foreach (var legacySource in legacySources ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(legacySource.UpdateTimePath)
+                || string.Equals(globalPath, NormalizePath(legacySource.UpdateTimePath), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var legacyLoadResult = LoadState(legacySource.UpdateTimePath);
+            if (!legacyLoadResult.Success)
+            {
+                continue;
+            }
+
+            changed |= MergeSoftwareAndLegacyFileState(mergedState, legacyLoadResult.State);
+            if (!string.IsNullOrWhiteSpace(legacySource.GlobalConfigPackagePath))
+            {
+                var packageState = GetGlobalConfigState(mergedState, legacySource.GlobalConfigPackagePath, out var created);
+                changed |= created;
+                changed |= MergeGlobalConfigState(packageState, legacyLoadResult.State.GlobalConfig);
+                MirrorLegacyGlobalConfigState(mergedState, packageState);
+            }
+        }
+
+        return changed ? SaveState(globalUpdateTimePath, mergedState) : SaveResult.Ok();
+    }
+
     public UpdateCheckResult Check(UpdateCheckConfig config, string updateTimePath, Version currentVersion, string softwareUpdateManifestPath = "")
     {
         var result = new UpdateCheckResult();
@@ -37,7 +82,13 @@ public sealed class UpdateCheckService
         var state = loadResult.State;
         var changed = false;
 
-        changed |= CheckGlobalConfigPackage(config.GlobalConfigPackagePath, state.GlobalConfig, result);
+        var globalConfigState = GetGlobalConfigState(state, config.GlobalConfigPackagePath, out var globalConfigStateCreated);
+        changed |= globalConfigStateCreated;
+        changed |= CheckGlobalConfigPackage(config.GlobalConfigPackagePath, globalConfigState, result);
+        if (!string.IsNullOrWhiteSpace(config.GlobalConfigPackagePath))
+        {
+            MirrorLegacyGlobalConfigState(state, globalConfigState);
+        }
         changed |= CheckSoftwareManifest(softwareUpdateManifestPath, state.Software, currentVersion, result);
 
         if (changed)
@@ -113,8 +164,55 @@ public sealed class UpdateCheckService
                 return SaveResult.Fail(loadResult.ErrorMessage ?? "updateTime.json 读取失败");
             }
 
-            loadResult.State.GlobalConfig.LastSeenWriteTimeUtc = packageInfo.WriteTimeUtc;
-            loadResult.State.GlobalConfig.LastUsedExportedAt = packageInfo.ExportedAt;
+            var globalConfigState = GetGlobalConfigState(loadResult.State, packagePath, out _);
+            globalConfigState.LastSeenWriteTimeUtc = packageInfo.WriteTimeUtc;
+            globalConfigState.LastUsedExportedAt = packageInfo.ExportedAt;
+            MirrorLegacyGlobalConfigState(loadResult.State, globalConfigState);
+            return SaveState(updateTimePath, loadResult.State);
+        }
+        catch (Exception ex)
+        {
+            return SaveResult.Fail(ex.Message);
+        }
+    }
+
+    public SaveResult MarkGlobalConfigImported(
+        string importedPackagePath,
+        string configuredPackagePath,
+        string updateTimePath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(importedPackagePath))
+            {
+                return SaveResult.Ok();
+            }
+
+            if (!File.Exists(importedPackagePath))
+            {
+                return SaveResult.Fail("导入的全局配置包不存在，无法更新基线。");
+            }
+
+            if (string.IsNullOrWhiteSpace(configuredPackagePath)
+                || string.Equals(
+                    NormalizePath(importedPackagePath),
+                    NormalizePath(configuredPackagePath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return MarkGlobalConfigUsed(importedPackagePath, updateTimePath);
+            }
+
+            var packageInfo = ReadGlobalConfigPackageInfo(importedPackagePath);
+            var loadResult = LoadState(updateTimePath);
+            if (!loadResult.Success)
+            {
+                return SaveResult.Fail(loadResult.ErrorMessage ?? "updateTime.json 读取失败");
+            }
+
+            var configuredState = GetGlobalConfigState(loadResult.State, configuredPackagePath, out _);
+            configuredState.LastUsedExportedAt = packageInfo.ExportedAt;
+            configuredState.LastSeenWriteTimeUtc = null;
+            MirrorLegacyGlobalConfigState(loadResult.State, configuredState);
             return SaveState(updateTimePath, loadResult.State);
         }
         catch (Exception ex)
@@ -154,12 +252,21 @@ public sealed class UpdateCheckService
 
         if (result.DetectedGlobalConfigExportedAt is not null)
         {
-            loadResult.State.GlobalConfig.LastUsedExportedAt = result.DetectedGlobalConfigExportedAt;
-        }
-
-        if (result.DetectedGlobalConfigWriteTimeUtc is not null)
-        {
-            loadResult.State.GlobalConfig.LastSeenWriteTimeUtc = result.DetectedGlobalConfigWriteTimeUtc;
+            if (string.IsNullOrWhiteSpace(result.DetectedGlobalConfigPath))
+            {
+                loadResult.State.GlobalConfig.LastUsedExportedAt = result.DetectedGlobalConfigExportedAt;
+                loadResult.State.GlobalConfig.LastSeenWriteTimeUtc = result.DetectedGlobalConfigWriteTimeUtc;
+            }
+            else
+            {
+                var globalConfigState = GetGlobalConfigState(
+                    loadResult.State,
+                    result.DetectedGlobalConfigPath,
+                    out _);
+                globalConfigState.LastUsedExportedAt = result.DetectedGlobalConfigExportedAt;
+                globalConfigState.LastSeenWriteTimeUtc = result.DetectedGlobalConfigWriteTimeUtc;
+                MirrorLegacyGlobalConfigState(loadResult.State, globalConfigState);
+            }
         }
 
         if (result.DetectedRulesWriteTimeUtc is not null)
@@ -215,6 +322,7 @@ public sealed class UpdateCheckService
             if (packageInfo.ExportedAt > state.LastUsedExportedAt.Value)
             {
                 result.UpdatedItems.Add("全局配置");
+                result.DetectedGlobalConfigPath = NormalizePath(packagePath);
                 result.DetectedGlobalConfigExportedAt = packageInfo.ExportedAt;
                 result.DetectedGlobalConfigWriteTimeUtc = packageInfo.WriteTimeUtc;
                 return false;
@@ -458,11 +566,144 @@ public sealed class UpdateCheckService
 
     private static void NormalizeState(UpdateTimeState state)
     {
+        state.GlobalConfigs ??= new Dictionary<string, UpdateGlobalConfigState>(StringComparer.OrdinalIgnoreCase);
         state.Rules ??= new UpdateFileState();
         state.Map ??= new UpdateFileState();
         state.GlobalConfig ??= new UpdateGlobalConfigState();
         state.Software ??= new UpdateSoftwareState();
         state.Software.LastUsedVersion ??= string.Empty;
+
+        var normalizedGlobalConfigs = new Dictionary<string, UpdateGlobalConfigState>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in state.GlobalConfigs)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.Key) && entry.Value is not null)
+            {
+                normalizedGlobalConfigs[NormalizePath(entry.Key)] = entry.Value;
+            }
+        }
+
+        state.GlobalConfigs = normalizedGlobalConfigs;
+    }
+
+    private static bool MergeSoftwareAndLegacyFileState(UpdateTimeState target, UpdateTimeState source)
+    {
+        var changed = false;
+        changed |= MergeDate(
+            target.Rules.LastUsedWriteTimeUtc,
+            source.Rules.LastUsedWriteTimeUtc,
+            value => target.Rules.LastUsedWriteTimeUtc = value);
+        changed |= MergeDate(
+            target.Map.LastUsedWriteTimeUtc,
+            source.Map.LastUsedWriteTimeUtc,
+            value => target.Map.LastUsedWriteTimeUtc = value);
+
+        if (Version.TryParse(source.Software.LastUsedVersion, out var sourceVersion)
+            && (!Version.TryParse(target.Software.LastUsedVersion, out var targetVersion)
+                || sourceVersion > targetVersion))
+        {
+            target.Software.LastUsedVersion = source.Software.LastUsedVersion;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static bool MergeGlobalConfigState(
+        UpdateGlobalConfigState target,
+        UpdateGlobalConfigState source)
+    {
+        var changed = false;
+        changed |= MergeDate(
+            target.LastSeenWriteTimeUtc,
+            source.LastSeenWriteTimeUtc,
+            value => target.LastSeenWriteTimeUtc = value);
+        changed |= MergeDateOffset(
+            target.LastUsedExportedAt,
+            source.LastUsedExportedAt,
+            value => target.LastUsedExportedAt = value);
+        return changed;
+    }
+
+    private static UpdateGlobalConfigState GetGlobalConfigState(
+        UpdateTimeState state,
+        string packagePath,
+        out bool created)
+    {
+        created = false;
+        if (string.IsNullOrWhiteSpace(packagePath))
+        {
+            return state.GlobalConfig;
+        }
+
+        var key = NormalizePath(packagePath);
+        if (state.GlobalConfigs.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var migrated = state.GlobalConfigs.Count == 0
+            ? CloneGlobalConfigState(state.GlobalConfig)
+            : new UpdateGlobalConfigState();
+        state.GlobalConfigs[key] = migrated;
+        created = true;
+        return migrated;
+    }
+
+    private static UpdateGlobalConfigState CloneGlobalConfigState(UpdateGlobalConfigState source)
+    {
+        return new UpdateGlobalConfigState
+        {
+            LastSeenWriteTimeUtc = source.LastSeenWriteTimeUtc,
+            LastUsedExportedAt = source.LastUsedExportedAt
+        };
+    }
+
+    private static void MirrorLegacyGlobalConfigState(
+        UpdateTimeState state,
+        UpdateGlobalConfigState source)
+    {
+        state.GlobalConfig.LastSeenWriteTimeUtc = source.LastSeenWriteTimeUtc;
+        state.GlobalConfig.LastUsedExportedAt = source.LastUsedExportedAt;
+    }
+
+    private static bool MergeDate(
+        DateTime? target,
+        DateTime? source,
+        Action<DateTime?> assign)
+    {
+        if (source is null || target >= source)
+        {
+            return false;
+        }
+
+        assign(source);
+        return true;
+    }
+
+    private static bool MergeDateOffset(
+        DateTimeOffset? target,
+        DateTimeOffset? source,
+        Action<DateTimeOffset?> assign)
+    {
+        if (source is null || target >= source)
+        {
+            return false;
+        }
+
+        assign(source);
+        return true;
+    }
+
+    private static string NormalizePath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path.Trim());
+        }
+        catch
+        {
+            return path.Trim();
+        }
     }
 
     private static string FormatVersion(Version version)

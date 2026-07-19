@@ -6,24 +6,9 @@ public sealed class FactoryMapLineArrangementResult
 
     public string? ErrorMessage { get; init; }
 
-    public int ArrangedRouteCount { get; init; }
-
-    public int RemovedBendCount { get; init; }
-
-    public int CreatedBendCount { get; init; }
-
-    public static FactoryMapLineArrangementResult Succeeded(
-        int arrangedRouteCount,
-        int removedBendCount,
-        int createdBendCount)
+    public static FactoryMapLineArrangementResult Succeeded()
     {
-        return new FactoryMapLineArrangementResult
-        {
-            Success = true,
-            ArrangedRouteCount = arrangedRouteCount,
-            RemovedBendCount = removedBendCount,
-            CreatedBendCount = createdBendCount
-        };
+        return new FactoryMapLineArrangementResult { Success = true };
     }
 
     public static FactoryMapLineArrangementResult Failed(string errorMessage)

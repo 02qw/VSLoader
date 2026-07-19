@@ -8,29 +8,27 @@ public sealed class FactoryMapLineArrangementServiceTests
     private readonly FactoryMapLineArrangementService service = new();
 
     [Fact]
-    public void ArrangeAll_replaces_edge_hugging_bend_without_moving_anchors()
+    public void Arrangement_service_does_not_expose_full_map_arrangement()
     {
-        var map = CreateBadScreenshotMap();
-
-        var result = service.ArrangeAll(map, 10);
-
-        Assert.True(result.Success, result.ErrorMessage);
-        Assert.Equal(1, result.ArrangedRouteCount);
-        Assert.Equal((175d, 300d), GetPoint(map, "bottom:top"));
-        Assert.Equal((400d, 129d), GetPoint(map, "right:left"));
-        Assert.DoesNotContain(map.ConnectionPoints, point => point.Id == "bad-bend");
-        var sourceSegment = Assert.Single(map.Segments, segment => References(segment, "bottom:top"));
-        var sourceNeighbor = GetOtherPoint(map, sourceSegment, "bottom:top");
-        Assert.Equal(175, sourceNeighbor.X);
-        Assert.True(sourceNeighbor.Y < 300);
-        var targetSegment = Assert.Single(map.Segments, segment => References(segment, "right:left"));
-        var targetNeighbor = GetOtherPoint(map, targetSegment, "right:left");
-        Assert.Equal(129, targetNeighbor.Y);
-        Assert.True(targetNeighbor.X < 400);
+        Assert.DoesNotContain(
+            typeof(FactoryMapLineArrangementService).GetMethods(),
+            method => string.Equals(method.Name, "ArrangeAll", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void ArrangeAll_failure_keeps_original_topology_unchanged()
+    public void ArrangeConnectedTo_empty_anchor_set_does_not_modify_any_route()
+    {
+        var map = CreateBadScreenshotMap();
+        var snapshot = Snapshot(map);
+
+        var result = service.ArrangeConnectedTo(map, [], 10);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal(snapshot, Snapshot(map));
+    }
+
+    [Fact]
+    public void ArrangeConnectedTo_failure_keeps_original_topology_unchanged()
     {
         var map = new FactoryMapDeviceViewData
         {
@@ -49,27 +47,26 @@ public sealed class FactoryMapLineArrangementServiceTests
         };
         var snapshot = Snapshot(map);
 
-        var result = service.ArrangeAll(map, 10);
+        var result = service.ArrangeConnectedTo(map, ["node:top"], 10);
 
         Assert.False(result.Success);
         Assert.Equal(snapshot, Snapshot(map));
     }
 
     [Fact]
-    public void ArrangeAll_empty_map_reports_no_work()
+    public void ArrangeConnectedTo_empty_map_reports_no_work()
     {
         var map = new FactoryMapDeviceViewData();
 
-        var result = service.ArrangeAll(map, 10);
+        var result = service.ArrangeConnectedTo(map, ["missing"], 10);
 
         Assert.True(result.Success, result.ErrorMessage);
-        Assert.Equal(0, result.ArrangedRouteCount);
         Assert.Empty(map.ConnectionPoints);
         Assert.Empty(map.Segments);
     }
 
     [Fact]
-    public void ArrangeAll_normalizes_legacy_off_grid_escape_channel()
+    public void ArrangeConnectedTo_normalizes_legacy_off_grid_escape_channel()
     {
         var map = new FactoryMapDeviceViewData
         {
@@ -110,7 +107,7 @@ public sealed class FactoryMapLineArrangementServiceTests
             ]
         };
 
-        var result = service.ArrangeAll(map, 10);
+        var result = service.ArrangeConnectedTo(map, ["source:bottom"], 10);
 
         Assert.True(result.Success, result.ErrorMessage);
         Assert.DoesNotContain(map.ConnectionPoints, point => point.Kind == FactoryMapConnectionPointKinds.Bend && point.Y == 628);
@@ -138,26 +135,6 @@ public sealed class FactoryMapLineArrangementServiceTests
                 new FactoryMapSegment { Id = "bad-2", FromPointId = "bad-bend", ToPointId = "right:left", ZIndex = 5 }
             ]
         };
-    }
-
-    private static bool References(FactoryMapSegment segment, string pointId)
-    {
-        return segment.FromPointId == pointId || segment.ToPointId == pointId;
-    }
-
-    private static FactoryMapConnectionPoint GetOtherPoint(
-        FactoryMapDeviceViewData map,
-        FactoryMapSegment segment,
-        string pointId)
-    {
-        var otherId = segment.FromPointId == pointId ? segment.ToPointId : segment.FromPointId;
-        return map.ConnectionPoints.Single(point => point.Id == otherId);
-    }
-
-    private static (double X, double Y) GetPoint(FactoryMapDeviceViewData map, string pointId)
-    {
-        var point = map.ConnectionPoints.Single(candidate => candidate.Id == pointId);
-        return (point.X, point.Y);
     }
 
     private static string Snapshot(FactoryMapDeviceViewData map)

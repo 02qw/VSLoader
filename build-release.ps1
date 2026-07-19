@@ -1,19 +1,20 @@
 param(
-    [string]$Version = "4.0.0",
+    [string]$Version = "4.0.1",
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [string]$UpdateOutputDir = ".\release-update",
     [string]$ReleaseNotes = 
 "
 更新日志:
--V4.0.0
--增加自定义基础能力
--优化地图实现
--修复主界面搜索bug
--优化已知bug
-
+-修复导入时检测异常导致地图加载失败
+-修复主界面状态无法保存的问题
+-修复不同工作区更新不同步问题
 "
 #History
+# -增加自定义基础能力
+# -优化地图实现
+# -修复主界面搜索bug
+# -优化已知bug
 # -优化系统稳定性
 # -重构地图节点逻辑到V6
 # -优化自动化登录逻辑

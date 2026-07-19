@@ -35,7 +35,8 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <chromeControls:ModernTitleBar Grid.Row="0" />
+        <chromeControls:ModernTitleBar Grid.Row="0"
+                                       WorkspaceMaximizedChanged="MainTitleBar_WorkspaceMaximizedChanged" />
         <Grid Grid.Row="1">
         <DockPanel Background="{StaticResource ModernAppBackgroundBrush}"
                    IsEnabled="{Binding IsNotBusy}">

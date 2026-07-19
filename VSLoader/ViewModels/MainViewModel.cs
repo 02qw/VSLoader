@@ -99,7 +99,7 @@ public sealed partial class MainViewModel : ObservableObject
             _adminUiAutoPasteLogService);
         _updateCheckService = updateCheckService ?? new UpdateCheckService();
         _updateTimePath = string.IsNullOrWhiteSpace(updateTimePath)
-            ? Path.Combine(_configService.ConfigDirectory, "updateTime.json")
+            ? UpdateTimePathService.GlobalUpdateTimePath
             : updateTimePath;
         _softwareUpdateService = softwareUpdateService ?? new SoftwareUpdateService();
         _softwareUpdatesRoot = string.IsNullOrWhiteSpace(softwareUpdatesRoot)
@@ -846,7 +846,10 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void MarkImportedGlobalConfigUsed(string packagePath)
     {
-        var markResult = _updateCheckService.MarkGlobalConfigUsed(packagePath, _updateTimePath);
+        var markResult = _updateCheckService.MarkGlobalConfigImported(
+            packagePath,
+            _config.UpdateCheck.GlobalConfigPackagePath,
+            _updateTimePath);
         if (!markResult.Success)
         {
             ShowUpdateFailure($"全局配置基线更新失败：{markResult.ErrorMessage}");
