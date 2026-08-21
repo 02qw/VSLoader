@@ -1,6 +1,6 @@
 ﻿{
-    "version":  "4.0.1",
-    "packageFile":  "VSLoader_4.0.1_win-x64.zip",
-    "sha256":  "d67a71beedeb9f9aabd92d6dc93a7b5ebe0350554bfca82bfd6a0259ea837eda",
-    "releaseNotes":  "\n更新日志:\n-修复导入时检测异常导致地图加载失败\n-修复主界面状态无法保存的问题\n"
+    "version":  "4.0.3",
+    "packageFile":  "VSLoader_4.0.3_win-x64.zip",
+    "sha256":  "d97cc95a03ec3f31df26774f6ae5bae5948b5a7f08380bb56963967422481f79",
+    "releaseNotes":  "\n更新日志:\n-新增代码对比工具\n"
 }
