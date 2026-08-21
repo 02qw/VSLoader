@@ -5,8 +5,9 @@
         xmlns:chromeControls="clr-namespace:VSLoader.Views.Controls"
         Title="{Binding WindowTitle}"
         Icon="pack://application:,,,/Assets/tomato.ico"
-        Height="190"
+        MinHeight="260"
         Width="460"
+        SizeToContent="Height"
         ResizeMode="NoResize"
         WindowStyle="None"
         WindowStartupLocation="CenterOwner">
@@ -40,7 +41,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
@@ -62,6 +63,7 @@
                            Foreground="{StaticResource ModernSecondaryTextBrush}"
                            Text="名称不能包含：\ / : * ? &quot; &lt; &gt; |" />
                 <StackPanel Grid.Row="3"
+                            Margin="0,16,0,0"
                             HorizontalAlignment="Right"
                             Orientation="Horizontal">
                     <Button Style="{StaticResource ModernDialogPrimaryButtonStyle}"
