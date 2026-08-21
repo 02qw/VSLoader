@@ -59,6 +59,7 @@ public sealed class BatchImportService
             }
 
             var hasModulePatternHeader = headers.Contains(nameof(BatchImportRule.ModulePattern));
+            var hasSimpleNameTemplateHeader = headers.Contains(nameof(BatchImportRule.NameTemplate));
             var rowNumber = 1;
             while (csv.Read())
             {
@@ -69,7 +70,9 @@ public sealed class BatchImportService
                         MatchType = "ModuleMap",
                         ModuleName = csv.GetField(nameof(BatchImportRule.ModuleName))?.Trim() ?? string.Empty,
                         DisplayName = csv.GetField(nameof(BatchImportRule.DisplayName))?.Trim() ?? string.Empty,
-                        NameTemplate = "{DisplayName}_{No}"
+                        NameTemplate = hasSimpleNameTemplateHeader
+                            ? csv.GetField(nameof(BatchImportRule.NameTemplate))?.Trim() ?? string.Empty
+                            : "{DisplayName}_{No}"
                     }
                     : new BatchImportRule
                     {
@@ -678,9 +681,11 @@ public sealed class BatchImportService
             return SimpleModuleMapResult.Fail(StatusSkipped, $"模块名未在 CSV 中配置：{moduleName}", sortNo, moduleName);
         }
 
-        var generatedName = !string.IsNullOrWhiteSpace(folderIdentity.No)
-            ? $"{matchedRule.DisplayName.Trim()}_{folderIdentity.No}"
-            : $"{matchedRule.DisplayName.Trim()}_{folderIdentity.Type}";
+        var generatedName = RenderSimpleModuleMapName(matchedRule, folderName, folderIdentity, out var nameError);
+        if (!string.IsNullOrWhiteSpace(nameError))
+        {
+            return SimpleModuleMapResult.Fail(StatusRuleError, nameError, sortNo, moduleName);
+        }
 
         return new SimpleModuleMapResult(
             true,
@@ -690,6 +695,48 @@ public sealed class BatchImportService
             matchedRule.SortIndex,
             null,
             StatusImportable);
+    }
+
+    private static string RenderSimpleModuleMapName(
+        BatchImportRule rule,
+        string folderName,
+        FolderIdentity folderIdentity,
+        out string? errorMessage)
+    {
+        errorMessage = null;
+        var template = string.IsNullOrWhiteSpace(rule.NameTemplate)
+            ? "{DisplayName}_{No}"
+            : rule.NameTemplate.Trim();
+
+        // Preserve the legacy fallback for folders without a numeric suffix.
+        if (string.Equals(template, "{DisplayName}_{No}", StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(folderIdentity.No))
+        {
+            return $"{rule.DisplayName.Trim()}_{folderIdentity.Type}";
+        }
+
+        string? replacementError = null;
+        var result = Regex.Replace(template, @"\{(?<name>[^{}]+)\}", tokenMatch =>
+        {
+            var token = tokenMatch.Groups["name"].Value;
+            return token switch
+            {
+                "DisplayName" => rule.DisplayName.Trim(),
+                "FolderName" => folderName,
+                "Type" => folderIdentity.Type,
+                "No" => folderIdentity.No ?? string.Empty,
+                _ => ReportUnknownSimpleToken(token, ref replacementError)
+            };
+        });
+
+        errorMessage = replacementError;
+        return result.Trim();
+    }
+
+    private static string ReportUnknownSimpleToken(string token, ref string? errorMessage)
+    {
+        errorMessage ??= $"名称模板引用了不存在的变量：{token}。支持 DisplayName、FolderName、Type、No。";
+        return string.Empty;
     }
 
     private static FolderIdentity? TryParseFolderIdentity(string folderName)

@@ -1,4 +1,4 @@
-ModuleName,DisplayName
+ModuleName,DisplayName,NameTemplate
 eap-sic-AMX-Sintering,AMX银烧结
 eap-sic-Quick-Sintering,快克银烧结
 eap-sic-HB-VerticalReflow,浩宝氮气垂直炉
@@ -29,4 +29,4 @@ eap-sic-SBT-PinWelding,PIN超声焊
 eap-sic-SharpTop-Gluing,灌胶机
 eap-sic-SMTK-FormicReflow,甲酸炉
 eap-sic-SiliCool-HotBonder,热贴机
-eap-sic-CJ-WireBonder,全自动键合机
+eap-sic-CJ-WireBonder,全自动键合机,{DisplayName}_{Type}{No}

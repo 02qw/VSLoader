@@ -33,6 +33,48 @@ eap-sic-Jutze-3D-AOI,矩子3D-AOI
     }
 
     [Fact]
+    public void LoadRules_reads_optional_name_template_for_simple_module_map_csv()
+    {
+        var csvPath = Path.Combine(_rootPath, "module-map-with-template.csv");
+        File.WriteAllText(csvPath, """
+ModuleName,DisplayName,NameTemplate
+eap-sic-CJ-WireBonder,全自动键合机,{DisplayName}_{Type}{No}
+""");
+
+        var rules = _service.LoadRules(csvPath, out var errors);
+
+        Assert.Empty(errors);
+        var rule = Assert.Single(rules);
+        Assert.Equal("{DisplayName}_{Type}{No}", rule.NameTemplate);
+    }
+
+    [Fact]
+    public void BuildPreview_distinguishes_simple_module_map_names_by_folder_type()
+    {
+        var wboFolder = CreateFolder("22493_WBO046");
+        var twboFolder = CreateFolder("48807_TWBO046");
+        WriteZamDeployXml(wboFolder, """<application description="Application for eap-sic-CJ-WireBonder" />""");
+        WriteZamDeployXml(twboFolder, """<application description="Application for eap-sic-CJ-WireBonder" />""");
+
+        var rules = new[]
+        {
+            new BatchImportRule
+            {
+                ModuleName = "eap-sic-CJ-WireBonder",
+                DisplayName = "全自动键合机",
+                NameTemplate = "{DisplayName}_{Type}{No}"
+            }
+        };
+
+        var items = _service.BuildPreview(_rootPath, rules, []);
+
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, item => item.GeneratedName == "全自动键合机_WBO046");
+        Assert.Contains(items, item => item.GeneratedName == "全自动键合机_TWBO046");
+        Assert.All(items, item => Assert.Equal(BatchImportService.StatusImportable, item.Status));
+    }
+
+    [Fact]
     public void BuildPreview_uses_simple_module_map_and_extracts_no_in_background()
     {
         var folderPath = CreateFolder("12190_TAOI007");
