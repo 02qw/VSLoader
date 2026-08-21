@@ -11,7 +11,8 @@ public static class SettingsPageOrderService
         SettingsPageIds.WebUi,
         SettingsPageIds.Updates,
         SettingsPageIds.Hotkeys,
-        SettingsPageIds.ContextMenuCapabilities
+        SettingsPageIds.ContextMenuCapabilities,
+        SettingsPageIds.CodeCompare
     ];
 
     public static IReadOnlyList<string> Normalize(IEnumerable<string>? configuredOrder)
@@ -50,6 +51,7 @@ public static class SettingsPageOrderService
             SettingsPageIds.Updates => "更新",
             SettingsPageIds.Hotkeys => "快捷键",
             SettingsPageIds.ContextMenuCapabilities => "右键菜单能力",
+            SettingsPageIds.CodeCompare => "代码对比",
             SettingsPageIds.PageOrder => "页面顺序",
             _ => "未知页面"
         };

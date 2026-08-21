@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VSLoader.Models;
@@ -25,7 +26,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         PasswordProtectionService passwordProtectionService,
         Func<HotkeyConfig, MapHotkeyConfig, SaveResult>? tryRegisterHotkeys,
         ContextMenuCapabilityCollectionConfig? contextMenuCapabilityConfig = null,
-        IEnumerable<string>? settingsPageOrder = null)
+        IEnumerable<string>? settingsPageOrder = null,
+        CodeCompareConfig? codeCompareConfig = null)
     {
         VSCodePath = vscodePath;
         SoftwareUpdateManifestPath = softwareUpdateManifestPath;
@@ -34,6 +36,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         UpdateCheck = updateCheckConfig.Clone();
         Hotkey = hotkeyConfig.Clone();
         MapHotkey = mapHotkeyConfig.Clone();
+        CodeCompare = codeCompareConfig?.Clone() ?? new CodeCompareConfig();
         _dialogService = dialogService;
         _passwordProtectionService = passwordProtectionService;
         TryRegisterHotkeys = tryRegisterHotkeys;
@@ -84,6 +87,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     private MapHotkeyConfig mapHotkey = new();
 
     [ObservableProperty]
+    private CodeCompareConfig codeCompare = new();
+
+    [ObservableProperty]
     private string hotkeyDisplayText = string.Empty;
 
     [ObservableProperty]
@@ -121,6 +127,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public bool IsContextMenuCapabilitiesPageSelected => IsPageSelected(SettingsPageIds.ContextMenuCapabilities);
 
+    public bool IsCodeComparePageSelected => IsPageSelected(SettingsPageIds.CodeCompare);
+
     public bool IsPageOrderPageSelected => IsPageSelected(SettingsPageIds.PageOrder);
 
     public IReadOnlyList<ContextMenuCapabilityDefinition> PowerShellCapabilitiesApprovedForTrust =>
@@ -142,6 +150,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(IsUpdatesPageSelected));
         OnPropertyChanged(nameof(IsHotkeysPageSelected));
         OnPropertyChanged(nameof(IsContextMenuCapabilitiesPageSelected));
+        OnPropertyChanged(nameof(IsCodeComparePageSelected));
         OnPropertyChanged(nameof(IsPageOrderPageSelected));
     }
 
@@ -152,6 +161,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(path))
         {
             VSCodePath = path;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseCodeModulesRoot()
+    {
+        var path = _dialogService.SelectFolder();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            CodeCompare.LocalModulesRootPath = path;
+            OnPropertyChanged(nameof(CodeCompare));
         }
     }
 
@@ -180,6 +200,25 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         TrimUpdateCheckConfig();
+
+        CodeCompare.LocalModulesRootPath = CodeCompare.LocalModulesRootPath?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(CodeCompare.LocalModulesRootPath)
+            && !Directory.Exists(CodeCompare.LocalModulesRootPath))
+        {
+            _dialogService.ShowError($"本地代码模块根目录不存在：{CodeCompare.LocalModulesRootPath}");
+            return;
+        }
+
+        if (!CodeComparePathService.TryNormalizeScope(
+                CodeCompare.DefaultScanScope,
+                out var normalizedScope,
+                out var scopeError))
+        {
+            _dialogService.ShowError(scopeError);
+            return;
+        }
+
+        CodeCompare.DefaultScanScope = normalizedScope;
 
         if (!ValidateHotkeyConfig())
         {

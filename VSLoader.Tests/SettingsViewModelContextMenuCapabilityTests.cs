@@ -53,10 +53,14 @@ public sealed class SettingsViewModelContextMenuCapabilityTests
 
         Assert.Equal(
             ContextMenuBuiltInActionIds.All,
-            viewModel.ContextMenuCapabilityItems.Take(4).Select(item => item.Definition.BuiltInActionId));
+            viewModel.ContextMenuCapabilityItems
+                .Take(ContextMenuBuiltInActionIds.All.Count)
+                .Select(item => item.Definition.BuiltInActionId));
         Assert.Equal(
             ["custom-a", "custom-b"],
-            viewModel.ContextMenuCapabilityItems.Skip(4).Select(item => item.Definition.Id));
+            viewModel.ContextMenuCapabilityItems
+                .Skip(ContextMenuBuiltInActionIds.All.Count)
+                .Select(item => item.Definition.Id));
     }
 
     [Fact]

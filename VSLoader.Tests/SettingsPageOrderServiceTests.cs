@@ -21,7 +21,8 @@ public sealed class SettingsPageOrderServiceTests
             SettingsPageIds.General,
             SettingsPageIds.WebUi,
             SettingsPageIds.Updates,
-            SettingsPageIds.ContextMenuCapabilities
+            SettingsPageIds.ContextMenuCapabilities,
+            SettingsPageIds.CodeCompare
         ],
         result);
     }

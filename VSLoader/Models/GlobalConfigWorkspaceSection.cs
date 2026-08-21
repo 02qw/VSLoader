@@ -35,6 +35,8 @@ public sealed class GlobalConfigWorkspaceSettings
     public GlobalConfigWorkspaceUpdateSettings UpdateCheck { get; set; } = new();
 
     public ContextMenuCapabilityCollectionConfig ContextMenuCapabilities { get; set; } = new();
+
+    public CodeCompareConfig CodeCompare { get; set; } = new();
 }
 
 public sealed class GlobalConfigWorkspaceUpdateSettings

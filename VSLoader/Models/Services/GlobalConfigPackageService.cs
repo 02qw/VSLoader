@@ -701,7 +701,8 @@ public sealed class GlobalConfigPackageService
             {
                 GlobalConfigPackagePath = config.UpdateCheck.GlobalConfigPackagePath?.Trim() ?? string.Empty
             },
-            ContextMenuCapabilities = config.ContextMenuCapabilities.Clone()
+            ContextMenuCapabilities = config.ContextMenuCapabilities.Clone(),
+            CodeCompare = config.CodeCompare?.Clone() ?? new CodeCompareConfig()
         };
     }
 
@@ -722,7 +723,8 @@ public sealed class GlobalConfigPackageService
                 GlobalConfigPackagePath = settings.UpdateCheck?.GlobalConfigPackagePath?.Trim() ?? string.Empty
             },
             ContextMenuCapabilities = settings.ContextMenuCapabilities?.Clone()
-                ?? new ContextMenuCapabilityCollectionConfig()
+                ?? new ContextMenuCapabilityCollectionConfig(),
+            CodeCompare = settings.CodeCompare?.Clone() ?? new CodeCompareConfig()
         };
     }
 
@@ -736,6 +738,11 @@ public sealed class GlobalConfigPackageService
         config.WebUi ??= new WebUiConfig();
         config.UpdateCheck ??= new UpdateCheckConfig();
         config.ContextMenuCapabilities ??= new ContextMenuCapabilityCollectionConfig();
+        config.CodeCompare ??= new CodeCompareConfig();
+        config.CodeCompare.LocalModulesRootPath = config.CodeCompare.LocalModulesRootPath?.Trim() ?? string.Empty;
+        config.CodeCompare.DefaultScanScope = string.IsNullOrWhiteSpace(config.CodeCompare.DefaultScanScope)
+            ? @"config\deo"
+            : config.CodeCompare.DefaultScanScope.Trim();
         config.VSCodePath ??= string.Empty;
         NormalizeMapHotkeyConfig(config.MapHotkey);
         var capabilityWarnings = new ContextMenuCapabilityConfigService().Normalize(config.ContextMenuCapabilities);

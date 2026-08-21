@@ -35,6 +35,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly string _softwareUpdatesRoot;
     private readonly GlobalConfigPackageService _globalConfigPackageService;
     private readonly VSCodePathResolver _vsCodePathResolver;
+    private readonly CodeCompareLauncherService _codeCompareLauncherService = new();
     private readonly UpdaterRunnerService _updaterRunnerService;
     private readonly string _factoryMapLayoutPath;
     private readonly string _workspaceId;
@@ -1644,8 +1645,47 @@ public sealed partial class MainViewModel : ObservableObject
                 string.Equals(context.Surface, ContextMenuCapabilitySurfaces.FactoryMap, StringComparison.Ordinal)
                     ? BusyOverlayHost.Map
                     : BusyOverlayHost.Main),
+            ContextMenuBuiltInActionIds.OpenCodeCompare => OpenCodeCompareForShortcutAsync(context),
             _ => Task.FromResult(ContextMenuCapabilityExecutionResult.Fail($"内建能力不受支持：{actionId}。"))
         };
+    }
+
+    private async Task<ContextMenuCapabilityExecutionResult> OpenCodeCompareForShortcutAsync(
+        ContextMenuCapabilityExecutionContext context)
+    {
+        if (!CodeComparePathService.TryResolveLocalModulePath(
+                _config.CodeCompare.LocalModulesRootPath,
+                context.Shortcut.SourceModuleName,
+                out var localModulePath,
+                out var localPathError))
+        {
+            return ContextMenuCapabilityExecutionResult.Fail(localPathError);
+        }
+
+        if (!CodeComparePathService.TryNormalizeScope(
+                _config.CodeCompare.DefaultScanScope,
+                out var normalizedScope,
+                out var scopeError))
+        {
+            return ContextMenuCapabilityExecutionResult.Fail(scopeError);
+        }
+
+        var remotePreflight = await new PathAccessPreflightService()
+            .CheckDirectoryAsync(context.Shortcut.TargetPath);
+        if (!remotePreflight.Success)
+        {
+            return ContextMenuCapabilityExecutionResult.Fail(
+                remotePreflight.ErrorMessage ?? "线上模块目录不存在或不可访问。");
+        }
+
+        var launchConfig = _config.CodeCompare.Clone();
+        launchConfig.DefaultScanScope = normalizedScope;
+        return _codeCompareLauncherService.Launch(
+            context.AppBaseDirectory,
+            localModulePath,
+            context.Shortcut.TargetPath,
+            launchConfig,
+            _appSettings.VSCodePath);
     }
 
     [RelayCommand(CanExecute = nameof(CanRunGlobalCommand))]
@@ -1663,7 +1703,8 @@ public sealed partial class MainViewModel : ObservableObject
             _passwordProtectionService,
             TryRegisterHotkeys,
             _config.ContextMenuCapabilities,
-            _appSettings.SettingsPageOrder);
+            _appSettings.SettingsPageOrder,
+            _config.CodeCompare);
         var window = new SettingsWindow(viewModel);
 
         if (window.ShowDialog() == true)
@@ -1683,6 +1724,7 @@ public sealed partial class MainViewModel : ObservableObject
             _config.UpdateCheck = viewModel.UpdateCheck.Clone();
             _config.Hotkey = viewModel.Hotkey.Clone();
             _config.MapHotkey = viewModel.MapHotkey.Clone();
+            _config.CodeCompare = viewModel.CodeCompare.Clone();
             var previousCapabilities = _config.ContextMenuCapabilities;
             _config.ContextMenuCapabilities = viewModel.ContextMenuCapabilities.Clone();
             if (!SaveCurrentConfig())

@@ -19,4 +19,6 @@ public sealed class AppConfig
     public UpdateCheckConfig UpdateCheck { get; set; } = new();
 
     public ContextMenuCapabilityCollectionConfig ContextMenuCapabilities { get; set; } = new();
+
+    public CodeCompareConfig CodeCompare { get; set; } = new();
 }

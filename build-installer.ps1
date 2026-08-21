@@ -4,7 +4,8 @@ param(
     [string]$Runtime = "win-x64",
     [switch]$FrameworkDependent,
     [string]$Publisher = "shee",
-    [string]$IsccPath = "C:\Users\shee_\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+    [string]$IsccPath = "C:\Users\shee_\AppData\Local\Programs\Inno Setup 6\ISCC.exe",
+    [string]$CodeCompareRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +19,12 @@ $installerDir = Join-Path $root "installer"
 $issPath = Join-Path $installerDir "VSLoader.iss"
 $appName = "VSLoader"
 $outputBaseFilename = "VSLoader_Setup_$Version"
+$codeCompareProjectPath = if ([string]::IsNullOrWhiteSpace($CodeCompareRoot)) {
+    Join-Path (Split-Path -Parent $root) "upAndown\src\UpAndown.CodeCompare\UpAndown.CodeCompare.csproj"
+}
+else {
+    Join-Path $CodeCompareRoot "src\UpAndown.CodeCompare\UpAndown.CodeCompare.csproj"
+}
 
 function Resolve-IsccPath {
     param([string]$ExplicitPath)
@@ -95,6 +102,31 @@ dotnet publish $projectPath `
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish 失败。"
 }
+
+Assert-FileExists -Path $codeCompareProjectPath -Message "找不到代码对比工具项目：$codeCompareProjectPath"
+$codeCompareOutputDir = Join-Path $publishDir "Tools\CodeCompare"
+if (Test-Path -LiteralPath $codeCompareOutputDir) {
+    Remove-Item -LiteralPath $codeCompareOutputDir -Recurse -Force
+}
+New-Item -ItemType Directory -Path $codeCompareOutputDir -Force | Out-Null
+
+Write-Host "正在发布代码对比工具..."
+dotnet publish $codeCompareProjectPath `
+    -c $Configuration `
+    -r $Runtime `
+    --self-contained:$selfContained `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:Version=$Version `
+    -p:AssemblyVersion=$Version `
+    -p:FileVersion=$Version `
+    -o $codeCompareOutputDir
+
+if ($LASTEXITCODE -ne 0) {
+    throw "代码对比工具发布失败。"
+}
+
+Assert-FileExists -Path (Join-Path $codeCompareOutputDir "UpAndown.CodeCompare.exe") -Message "代码对比工具发布目录缺少 UpAndown.CodeCompare.exe。"
 
 Write-Host "正在发布更新器..."
 dotnet publish $updaterProjectPath `

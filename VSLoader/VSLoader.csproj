@@ -9,6 +9,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\tomato.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <CodeCompareProjectPath>$(MSBuildThisFileDirectory)..\..\upAndown\src\UpAndown.CodeCompare\UpAndown.CodeCompare.csproj</CodeCompareProjectPath>
+    <CodeCompareBuildOutput>$(MSBuildThisFileDirectory)..\..\upAndown\src\UpAndown.CodeCompare\bin\$(Configuration)\net8.0-windows\</CodeCompareBuildOutput>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +33,20 @@
     </ItemGroup>
     <Copy SourceFiles="@(UpdaterOutput)"
           DestinationFiles="@(UpdaterOutput->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyCodeCompareToDebugOutput"
+          AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'VSLoader' And '$(Configuration)' == 'Debug' And Exists('$(CodeCompareProjectPath)')">
+    <MSBuild Projects="$(CodeCompareProjectPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+    <ItemGroup>
+      <CodeCompareOutput Include="$(CodeCompareBuildOutput)**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(CodeCompareOutput)"
+          DestinationFiles="@(CodeCompareOutput->'$(OutputPath)Tools\CodeCompare\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 

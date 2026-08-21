@@ -136,6 +136,75 @@
                               behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
                               PanningMode="VerticalOnly"
                               VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsCodeComparePageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                        <GroupBox Header="本地与线上代码对比" Style="{StaticResource ModernGroupBoxStyle}">
+                            <StackPanel>
+                                <TextBlock Margin="0,0,0,14"
+                                           Foreground="{StaticResource ModernSecondaryTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="当前工作区独立保存此配置。右键快捷项或地图节点时，将模块根目录与该快捷项的模块名组合成本地代码路径。" />
+
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="本地代码模块根目录" />
+                                    <TextBox Grid.Row="0"
+                                             Grid.Column="1"
+                                             Style="{StaticResource ModernTextBoxStyle}"
+                                             Height="34"
+                                             Padding="8,4"
+                                             VerticalContentAlignment="Center"
+                                             PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                             Text="{Binding CodeCompare.LocalModulesRootPath, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Grid.Row="0"
+                                            Grid.Column="2"
+                                            Style="{StaticResource ModernButtonStyle}"
+                                            Width="72"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding BrowseCodeModulesRootCommand}"
+                                            Content="浏览" />
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="默认扫描范围" />
+                                    <TextBox Grid.Row="1"
+                                             Grid.Column="1"
+                                             Grid.ColumnSpan="2"
+                                             Style="{StaticResource ModernTextBoxStyle}"
+                                             Height="34"
+                                             Margin="0,10,0,0"
+                                             Padding="8,4"
+                                             VerticalContentAlignment="Center"
+                                             PreviewMouseWheel="SettingsInput_PreviewMouseWheel"
+                                             Text="{Binding CodeCompare.DefaultScanScope, UpdateSourceTrigger=PropertyChanged}" />
+
+                                    <CheckBox Grid.Row="2"
+                                              Grid.Column="1"
+                                              Grid.ColumnSpan="2"
+                                              Margin="0,12,0,0"
+                                              Style="{StaticResource ModernCheckBoxStyle}"
+                                              Content="打开代码对比工具后自动开始扫描"
+                                              IsChecked="{Binding CodeCompare.AutoScan, Mode=TwoWay}" />
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Tag="SettingsPage"
+                              behaviors:SmoothTouchpadScrollBehavior.IsEnabled="True"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableHorizontal="False"
+                              behaviors:SmoothTouchpadScrollBehavior.EnableVertical="True"
+                              PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Auto"
                               Visibility="{Binding IsAdminUiPageSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel>
                 <GroupBox Header="AdminUI" Style="{StaticResource ModernGroupBoxStyle}">

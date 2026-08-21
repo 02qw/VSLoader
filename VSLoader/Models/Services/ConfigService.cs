@@ -75,6 +75,7 @@ public sealed class ConfigService
             config.WebUi ??= new WebUiConfig();
             config.UpdateCheck ??= new UpdateCheckConfig();
             config.ContextMenuCapabilities ??= new ContextMenuCapabilityCollectionConfig();
+            config.CodeCompare ??= new CodeCompareConfig();
             NormalizeConfig(config);
 
             return new ConfigLoadResult(config, true, null);
@@ -131,6 +132,11 @@ public sealed class ConfigService
         config.WebUi ??= new WebUiConfig();
         config.UpdateCheck ??= new UpdateCheckConfig();
         config.ContextMenuCapabilities ??= new ContextMenuCapabilityCollectionConfig();
+        config.CodeCompare ??= new CodeCompareConfig();
+        config.CodeCompare.LocalModulesRootPath = config.CodeCompare.LocalModulesRootPath?.Trim() ?? string.Empty;
+        config.CodeCompare.DefaultScanScope = string.IsNullOrWhiteSpace(config.CodeCompare.DefaultScanScope)
+            ? @"config\deo"
+            : config.CodeCompare.DefaultScanScope.Trim();
         config.Shortcuts ??= new List<ShortcutItem>();
         NormalizeAdminUiAutoPasteConfig(config.AdminUi);
         NormalizeMapHotkeyConfig(config.MapHotkey);

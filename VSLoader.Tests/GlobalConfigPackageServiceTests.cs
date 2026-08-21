@@ -271,6 +271,12 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
             UpdateCheck = new UpdateCheckConfig
             {
                 GlobalConfigPackagePath = @"\\server\VSLoader_GlobalConfig.json"
+            },
+            CodeCompare = new CodeCompareConfig
+            {
+                LocalModulesRootPath = @"D:\Source\macmic.eap.sic",
+                DefaultScanScope = @"config\deo",
+                AutoScan = false
             }
         };
         var appSettings = new AppSettings
@@ -297,6 +303,9 @@ public sealed class GlobalConfigPackageServiceTests : IDisposable
         Assert.Single(package.Workspace!.Settings!.Shortcuts);
         Assert.Equal(@"\\server\rules.csv", package.Workspace.Settings.BatchImport.LastCsvPath);
         Assert.Equal(@"\\server\VSLoader_GlobalConfig.json", package.Workspace.Settings.UpdateCheck.GlobalConfigPackagePath);
+        Assert.Equal(@"D:\Source\macmic.eap.sic", package.Workspace.Settings.CodeCompare.LocalModulesRootPath);
+        Assert.Equal(@"config\deo", package.Workspace.Settings.CodeCompare.DefaultScanScope);
+        Assert.False(package.Workspace.Settings.CodeCompare.AutoScan);
         Assert.NotNull(package.Workspace.FactoryMapLayout);
         Assert.Single(package.Workspace.FactoryMapLayout!.Devices);
     }

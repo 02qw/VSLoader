@@ -6,13 +6,15 @@ public static class ContextMenuBuiltInActionIds
     public const string OpenWebUi = "builtin.open-webui";
     public const string OpenAdminUi = "builtin.open-adminui";
     public const string DownloadAdminUiLink = "builtin.download-adminui-link";
+    public const string OpenCodeCompare = "builtin.open-code-compare";
 
     public static IReadOnlyList<string> All { get; } =
     [
         OpenVsCode,
         OpenWebUi,
         OpenAdminUi,
-        DownloadAdminUiLink
+        DownloadAdminUiLink,
+        OpenCodeCompare
     ];
 
     public static string GetDisplayName(string actionId)
@@ -23,6 +25,7 @@ public static class ContextMenuBuiltInActionIds
             OpenWebUi => "WebUI",
             OpenAdminUi => "AdminUI",
             DownloadAdminUiLink => "获取AdminUI连接",
+            OpenCodeCompare => "对比本地与线上代码",
             _ => actionId
         };
     }

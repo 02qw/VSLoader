@@ -17,10 +17,11 @@ public sealed class ContextMenuCapabilityConfigServiceTests
                 ContextMenuBuiltInActionIds.OpenVsCode,
                 ContextMenuBuiltInActionIds.OpenWebUi,
                 ContextMenuBuiltInActionIds.OpenAdminUi,
-                ContextMenuBuiltInActionIds.DownloadAdminUiLink
+                ContextMenuBuiltInActionIds.DownloadAdminUiLink,
+                ContextMenuBuiltInActionIds.OpenCodeCompare
             ],
             config.Items.Select(item => item.BuiltInActionId));
-        Assert.Equal([0, 10, 20, 30], config.Items.Select(item => item.Order));
+        Assert.Equal([0, 10, 20, 30, 40], config.Items.Select(item => item.Order));
         Assert.All(config.Items, item => Assert.Equal(ContextMenuCapabilityKinds.BuiltIn, item.Kind));
     }
 
@@ -41,9 +42,9 @@ public sealed class ContextMenuCapabilityConfigServiceTests
 
         Assert.Empty(warnings);
         Assert.Contains(config.Items, item => item.Id == "custom-1");
-        Assert.Equal(4, config.Items.Count(item => item.Kind == ContextMenuCapabilityKinds.BuiltIn));
-        Assert.Equal(5, config.Items.Count);
-        Assert.Equal([0, 10, 20, 30, 40], config.Items.Select(item => item.Order));
+        Assert.Equal(ContextMenuBuiltInActionIds.All.Count, config.Items.Count(item => item.Kind == ContextMenuCapabilityKinds.BuiltIn));
+        Assert.Equal(6, config.Items.Count);
+        Assert.Equal([0, 10, 20, 30, 40, 50], config.Items.Select(item => item.Order));
     }
 
     [Fact]

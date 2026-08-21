@@ -85,7 +85,8 @@ public sealed class ConfigServiceAdminUiAutoPasteTests : IDisposable
         var result = service.Load();
 
         Assert.True(result.Success, result.ErrorMessage);
-        Assert.Equal(4, result.Config.ContextMenuCapabilities.Items.Count);
+        Assert.Equal(ContextMenuBuiltInActionIds.All.Count, result.Config.ContextMenuCapabilities.Items.Count);
+        Assert.Equal(@"config\deo", result.Config.CodeCompare.DefaultScanScope);
         Assert.Equal(
             ContextMenuBuiltInActionIds.All,
             result.Config.ContextMenuCapabilities.Items.Select(item => item.BuiltInActionId));
